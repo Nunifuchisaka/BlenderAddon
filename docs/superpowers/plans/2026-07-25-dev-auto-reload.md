@@ -319,6 +319,8 @@ git commit -m "Add nuni_dev_reload watcher addon for auto-reloading NuniAvatarTo
 
 `[CmdletBinding()]`は付けない。付けると`-File`起動時にparamブロックの既定値評価タイミングで`$PSScriptRoot`(および`$PSCommandPath`/`$MyInvocation.MyCommand.Path`)が未設定になり、`-RepoRoot`省略時に`Split-Path`が空文字列/nullを渡されて即エラー終了することを実機のWindows PowerShell 5.1で確認した(既知の挙動)。`[CmdletBinding()]`を外せば`$PSScriptRoot`は正しく解決される。
 
+`script_directory_add()`の直後には`bpy.utils.refresh_script_paths()`も呼ぶ。`bpy.ops.preferences.addon_refresh()`だけでは、その場で新規追加したスクリプトディレクトリが`sys.path`に反映されず、直後の`addon_utils.enable()`が`No module named 'NuniAvatarToolkit'`で失敗する(戻り値`None`)ことを実機で確認した。teardown実行直後にsetupを再実行する往復シナリオ(このディレクトリが「元々登録済み」ではなく「このプロセス内で新規追加」になるケース)で再現する。`bpy.utils.refresh_script_paths()`(公式docstring: "Run this after creating new script paths to update sys.path")を追加で呼ぶことで解決する(実機で確認済み)。
+
 ```powershell
 param(
     [string]$BlenderVersion = "5.2",
@@ -386,6 +388,7 @@ else:
     print('script_directory already registered: ' + dev_dir)
 
 bpy.ops.preferences.addon_refresh()
+bpy.utils.refresh_script_paths()
 
 addon_utils.enable('nuni_dev_reload', default_set=True)
 addon_utils.enable('NuniAvatarToolkit', default_set=True)
