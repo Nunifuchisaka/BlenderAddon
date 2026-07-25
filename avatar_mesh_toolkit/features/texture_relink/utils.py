@@ -1,6 +1,6 @@
-"""features/texture_relink 用の純ロジック。bpy.types クラスは定義しないが、
-collect_missing_images() と relink_missing_textures() は bpy.data.images / bpy.path を
-直接扱うため、このモジュール自体は Blender 実機以外では import できない。
+"""Pure logic for features/texture_relink. No bpy.types classes are defined here,
+but collect_missing_images() and relink_missing_textures() directly use bpy.data.images
+and bpy.path, so this module itself cannot be imported outside Blender runtime.
 """
 
 import os
@@ -11,7 +11,7 @@ import bpy
 IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.tga', '.bmp', '.tiff', '.tif', '.exr', '.hdr'}
 
 _DUPLICATE_SUFFIX_RE = re.compile(r'\.\d{3}$')
-_VERSION_SUFFIX_RE = re.compile(r'_v\d+$', re.IGNORECASE)
+_VERSION_SUFFIX_RE = re.compile(r'_v\d+$', re.IGNORECASE)  # For partial matching only, not for LEVEL_NAME
 
 LEVEL_EXACT = 1
 LEVEL_NAME = 2
@@ -19,8 +19,8 @@ LEVEL_PARTIAL = 3
 
 
 def collect_missing_images(images):
-    """images: bpy.data.images 等の Image イテラブル。
-    source == 'FILE' かつパッキングされておらず、実ファイルが存在しない画像を返す。"""
+    """Collect images from the given iterable that are FILE-sourced, unpacked, and have missing source files.
+    images: iterable of bpy.data.images or similar."""
     missing = []
     for image in images:
         if image.source != 'FILE':
@@ -35,7 +35,7 @@ def collect_missing_images(images):
 
 
 def find_candidate_files(directory):
-    """directory 配下を再帰的に探索し、画像拡張子のファイルパス一覧を返す。"""
+    """Recursively search directory for image files and return list of file paths."""
     candidates = []
     for root, _dirs, files in os.walk(directory):
         for filename in files:
@@ -45,23 +45,24 @@ def find_candidate_files(directory):
 
 
 def _strip_duplicate_suffix(name):
-    """Blenderが重複時に付与する '.001' 等の末尾サフィックスを除去する。"""
+    """Remove Blender's duplicate suffix like '.001' from name."""
     return _DUPLICATE_SUFFIX_RE.sub('', name)
 
 
 def match_level(image_name, candidate_path):
-    """image_name (bpy.types.Image.name) と candidate_path の一致レベルを判定する。
-    LEVEL_EXACT: ファイル名+拡張子が完全一致(大文字小文字区別)。
-    LEVEL_NAME: 拡張子違い/大文字小文字/Blenderの重複サフィックス/バージョン番号を無視して名前が一致。
-    LEVEL_PARTIAL: 正規化した名前の一方がもう一方を含む(前方一致・含含一致)。
-    一致しない場合は None。"""
+    """Determine match level between image_name (bpy.types.Image.name) and candidate_path.
+    LEVEL_EXACT: filename+extension are exactly identical (case-sensitive).
+    LEVEL_NAME: names match after ignoring extension, case, and Blender duplicate suffix (.001 etc).
+    LEVEL_PARTIAL: normalized names have substring containment (either direction).
+                   Version suffix (_v1, _v2 etc) is only ignored in this level, not LEVEL_NAME.
+    Returns None if no match."""
     candidate_filename = os.path.basename(candidate_path)
 
     if image_name == candidate_filename:
         return LEVEL_EXACT
 
-    # Blenderは重複インポート時 "TX_Body_A.png.001" のように元の拡張子の後ろに
-    # 連番を付与するため、拡張子分離の前にこのサフィックスを剥がす必要がある。
+    # Blender appends serial number after extension on duplicate import (e.g. "TX_Body_A.png.001"),
+    # so we need to strip this before extension splitting.
     normalized_image_name = _strip_duplicate_suffix(image_name)
     image_stem = os.path.splitext(normalized_image_name)[0].lower()
     candidate_stem = os.path.splitext(candidate_filename)[0].lower()
@@ -69,12 +70,13 @@ def match_level(image_name, candidate_path):
     if not image_stem:
         return None
 
-    # バージョン番号サフィックス (_v1, _v2等) も除去
+    # LEVEL_NAME: exact name match (no version suffix normalization)
+    if image_stem == candidate_stem:
+        return LEVEL_NAME
+
+    # LEVEL_PARTIAL: substring match with version suffix normalization for flexible matching
     image_stem_normalized = _VERSION_SUFFIX_RE.sub('', image_stem)
     candidate_stem_normalized = _VERSION_SUFFIX_RE.sub('', candidate_stem)
-
-    if image_stem_normalized == candidate_stem_normalized:
-        return LEVEL_NAME
 
     if image_stem_normalized in candidate_stem_normalized or candidate_stem_normalized in image_stem_normalized:
         return LEVEL_PARTIAL
@@ -83,8 +85,8 @@ def match_level(image_name, candidate_path):
 
 
 def find_best_matches(image_name, candidates):
-    """candidates の中から image_name に対する最良レベルの一致を全て集めて返す。
-    戻り値: (level, [candidate_path, ...])。一致が無ければ (None, [])。"""
+    """Find all candidates matching image_name at the best match level.
+    Returns (level, [candidate_path, ...]). Returns (None, []) if no match found."""
     best_level = None
     best_matches = []
     for candidate_path in candidates:
@@ -100,10 +102,11 @@ def find_best_matches(image_name, candidates):
 
 
 def relink_missing_textures(images, directory):
-    """images 内の欠落画像を directory 配下から検索して再リンクする。
-    directory は絶対パスの既存ディレクトリであること(呼び出し側で bpy.path.abspath 済みを渡す)。"""
+    """Search directory for missing texture files and relink them.
+    directory must be an existing directory with absolute path (caller should pass bpy.path.abspath'd path).
+    Raises ValueError if directory does not exist."""
     if not directory or not os.path.isdir(directory):
-        raise ValueError(f"検索フォルダが存在しません: {directory}")
+        raise ValueError(f"Search folder does not exist: {directory}")
 
     candidates = find_candidate_files(directory)
 
