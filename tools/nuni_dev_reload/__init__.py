@@ -54,8 +54,11 @@ def _reload_package():
         for name in [n for n in list(sys.modules)
                      if n == WATCH_PACKAGE or n.startswith(WATCH_PACKAGE + ".")]:
             del sys.modules[name]
-        addon_utils.enable(WATCH_PACKAGE, default_set=False)
-        print("[nuni_dev_reload] reloaded " + WATCH_PACKAGE)
+        result = addon_utils.enable(WATCH_PACKAGE, default_set=False)
+        if result is not None:
+            print("[nuni_dev_reload] reloaded " + WATCH_PACKAGE)
+        else:
+            print("[nuni_dev_reload] FAILED to reload " + WATCH_PACKAGE + " (see traceback above)")
     except Exception:
         traceback.print_exc()
 
