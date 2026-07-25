@@ -12,7 +12,8 @@ if (-not (Test-Path $blenderExe)) {
     exit 1
 }
 
-$devAddonsDir = Join-Path $env:LOCALAPPDATA "NuniAvatarToolkitDev\addons"
+$devRoot = Join-Path $env:LOCALAPPDATA "NuniAvatarToolkitDev"
+$devAddonsDir = Join-Path $devRoot "addons"
 New-Item -ItemType Directory -Force -Path $devAddonsDir | Out-Null
 
 $junctions = @(
@@ -28,7 +29,7 @@ foreach ($j in $junctions) {
     if (Test-Path $j.Link) {
         $item = Get-Item $j.Link
         if ($item.LinkType -eq "Junction") {
-            Remove-Item $j.Link -Force -Confirm:$false
+            Remove-Item $j.Link -Force -Recurse -Confirm:$false
         } else {
             Write-Error "$($j.Link) はジャンクションではない実体です。手動で確認してください。"
             exit 1
@@ -43,7 +44,7 @@ $staleCopy = Join-Path $blenderAddonsRoot "NuniAvatarToolkit"
 if (Test-Path $staleCopy) {
     $item = Get-Item $staleCopy
     if ($item.LinkType -eq "Junction" -or $item.LinkType -eq "SymbolicLink") {
-        Remove-Item $staleCopy -Force -Confirm:$false
+        Remove-Item $staleCopy -Force -Recurse -Confirm:$false
         Write-Output "既存のリンクを削除しました: $staleCopy"
     } else {
         Remove-Item $staleCopy -Recurse -Force -Confirm:$false
@@ -55,7 +56,7 @@ $pyScript = @"
 import bpy
 import addon_utils
 
-dev_dir = r'$devAddonsDir'
+dev_dir = r'$devRoot'
 existing = [d.directory for d in bpy.context.preferences.filepaths.script_directories]
 if dev_dir not in existing:
     bpy.ops.preferences.script_directory_add(directory=dev_dir)
