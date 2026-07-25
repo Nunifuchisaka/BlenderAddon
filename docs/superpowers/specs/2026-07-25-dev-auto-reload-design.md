@@ -85,7 +85,7 @@ Blenderが管理するアドオンディレクトリの外に開発用スクリ�
   addon_utils.enable(WATCH_PACKAGE, default_set=False)
   ```
   - `default_set=False` によりユーザー設定（どのアドオンを有効にするか）を書き換えない。
-  - リロードの成否をコンソールに出力する（`print`）。成功時は `[nuni_dev_reload] reloaded NuniAvatarToolkit`、失敗時は例外のトレースバックを出す。
+  - リロードの成否をコンソールに出力する（`print`）。成功時は `[nuni_dev_reload] reloaded NuniAvatarToolkit`、失敗時は `[nuni_dev_reload] FAILED to reload NuniAvatarToolkit (see traceback above)` を出したうえで例外のトレースバックも出す。
 - リロード中に例外が発生しても監視は止めない。構文エラーのあるコードを保存した場合、コンソールにエラーが出るだけで、修正して保存し直せば次のポーリングで復帰する。
 - `_poll()` は常に `POLL_INTERVAL` を返してタイマーを継続させる。
 - `unregister()` で `bpy.app.timers.unregister(_poll)` を呼ぶ（登録されている場合のみ）。

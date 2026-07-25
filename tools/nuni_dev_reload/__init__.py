@@ -24,6 +24,8 @@ _last_signature = None
 
 
 def _watch_dir():
+    # Assumes NuniAvatarToolkit is a sibling folder in the same addons directory as this module.
+    # If the directory layout changes, _compute_signature will always return None and watching will silently stop.
     addons_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(addons_dir, WATCH_PACKAGE)
 
