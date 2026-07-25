@@ -4,7 +4,7 @@ import bmesh
 import bpy
 import numpy as np
 
-from ...core import mesh_eval
+from ...core import mesh_eval, uv_regions
 from ...core.context_utils import reset_to_object_mode_with_active
 from . import utils
 
@@ -191,9 +191,26 @@ class OBJECT_OT_amt_delete_hidden_faces(bpy.types.Operator):
             self.report({'WARNING'}, "選択された面がありません")
             return {'CANCELLED'}
         count = len(selected_faces)
+
+        # Captured here (using the actual selection, which the user may have hand-adjusted
+        # since "select hidden faces" ran) because this is the last moment the UV data of the
+        # about-to-be-destroyed faces still exists; the texture_bake feature reads this later
+        # to let the user reclaim the freed texture space.
+        rects_captured = 0
+        uv_layer = bm.loops.layers.uv.active
+        if uv_layer is not None:
+            new_rects = uv_regions.compute_freed_uv_rects(selected_faces, uv_layer, obj.name)
+            if new_rects:
+                uv_regions.add_freed_rects(mesh, new_rects)
+                rects_captured = len(new_rects)
+
         bmesh.ops.delete(bm, geom=selected_faces, context='FACES')
         bmesh.update_edit_mesh(mesh)
-        self.report({'INFO'}, f"{count} 面を削除しました")
+
+        msg = f"{count} 面を削除しました"
+        if rects_captured:
+            msg += f"({rects_captured} 個のUV解放領域を記録し、テクスチャベイク機能で再利用できます)"
+        self.report({'INFO'}, msg)
         return {'FINISHED'}
 
 

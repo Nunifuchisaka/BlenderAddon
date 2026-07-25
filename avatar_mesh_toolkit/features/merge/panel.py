@@ -8,7 +8,7 @@ class VIEW3D_PT_amt_merge(bpy.types.Panel):
     bl_region_type = 'UI'
     bl_category = TOOLKIT_CATEGORY
     bl_label = "メッシュ/マテリアル統合"
-    bl_order = 2
+    bl_order = 3
     bl_options = {'DEFAULT_CLOSED'}
 
     def draw(self, context):

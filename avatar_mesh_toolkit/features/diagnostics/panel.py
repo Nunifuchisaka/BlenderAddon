@@ -8,7 +8,7 @@ class VIEW3D_PT_amt_diagnostics(bpy.types.Panel):
     bl_region_type = 'UI'
     bl_category = TOOLKIT_CATEGORY
     bl_label = "統計/書き出し前チェック"
-    bl_order = 3
+    bl_order = 4
     bl_options = {'DEFAULT_CLOSED'}
 
     def draw(self, context):
