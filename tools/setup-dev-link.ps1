@@ -64,6 +64,7 @@ else:
     print('script_directory already registered: ' + dev_dir)
 
 bpy.ops.preferences.addon_refresh()
+bpy.utils.refresh_script_paths()
 
 addon_utils.enable('nuni_dev_reload', default_set=True)
 addon_utils.enable('NuniAvatarToolkit', default_set=True)
