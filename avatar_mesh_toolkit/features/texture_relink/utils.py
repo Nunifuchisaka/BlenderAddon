@@ -11,7 +11,6 @@ import bpy
 IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.tga', '.bmp', '.tiff', '.tif', '.exr', '.hdr'}
 
 _DUPLICATE_SUFFIX_RE = re.compile(r'\.\d{3}$')
-_VERSION_SUFFIX_RE = re.compile(r'_v\d+$', re.IGNORECASE)  # For partial matching only, not for LEVEL_NAME
 
 LEVEL_EXACT = 1
 LEVEL_NAME = 2
@@ -54,7 +53,6 @@ def match_level(image_name, candidate_path):
     LEVEL_EXACT: filename+extension are exactly identical (case-sensitive).
     LEVEL_NAME: names match after ignoring extension, case, and Blender duplicate suffix (.001 etc).
     LEVEL_PARTIAL: normalized names have substring containment (either direction).
-                   Version suffix (_v1, _v2 etc) is only ignored in this level, not LEVEL_NAME.
     Returns None if no match."""
     candidate_filename = os.path.basename(candidate_path)
 
@@ -74,11 +72,8 @@ def match_level(image_name, candidate_path):
     if image_stem == candidate_stem:
         return LEVEL_NAME
 
-    # LEVEL_PARTIAL: substring match with version suffix normalization for flexible matching
-    image_stem_normalized = _VERSION_SUFFIX_RE.sub('', image_stem)
-    candidate_stem_normalized = _VERSION_SUFFIX_RE.sub('', candidate_stem)
-
-    if image_stem_normalized in candidate_stem_normalized or candidate_stem_normalized in image_stem_normalized:
+    # LEVEL_PARTIAL: substring containment match (either direction)
+    if image_stem in candidate_stem or candidate_stem in image_stem:
         return LEVEL_PARTIAL
 
     return None
