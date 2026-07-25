@@ -317,8 +317,9 @@ git commit -m "Add nuni_dev_reload watcher addon for auto-reloading NuniAvatarTo
 
 - [ ] **Step 1: `tools/setup-dev-link.ps1` を作成する**
 
+`[CmdletBinding()]`は付けない。付けると`-File`起動時にparamブロックの既定値評価タイミングで`$PSScriptRoot`(および`$PSCommandPath`/`$MyInvocation.MyCommand.Path`)が未設定になり、`-RepoRoot`省略時に`Split-Path`が空文字列/nullを渡されて即エラー終了することを実機のWindows PowerShell 5.1で確認した(既知の挙動)。`[CmdletBinding()]`を外せば`$PSScriptRoot`は正しく解決される。
+
 ```powershell
-[CmdletBinding()]
 param(
     [string]$BlenderVersion = "5.2",
     [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot)
