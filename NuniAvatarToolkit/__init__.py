@@ -1,5 +1,5 @@
 bl_info = {
-    "name": "Avatar Mesh Toolkit (アバターメッシュツールキット)",
+    "name": "NuniAvatarToolkit",
     "author": "Nunifuchisaka",
     "version": (1, 2, 0),
     "blender": (3, 6, 0),

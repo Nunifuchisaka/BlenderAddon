@@ -1,4 +1,4 @@
-"""Shared depsgraph/BVH helpers used by multiple Avatar Mesh Toolkit features.
+"""Shared depsgraph/BVH helpers used by multiple NuniAvatarToolkit features.
 
 Contains no bpy.types classes and needs no register()/unregister() -
 it is imported by feature modules, not registered itself.

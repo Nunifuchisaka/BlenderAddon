@@ -1,4 +1,4 @@
-# Avatar Mesh Toolkit (アバターメッシュツールキット)
+# NuniAvatarToolkit
 
 VRChat / VRM アバター制作向けの、メッシュ最適化オールインワンBlenderアドオンです。
 
@@ -15,9 +15,9 @@ Blender 3.6 以降(4.x系含む)。レガシー形式(`bl_info`)のアドオン�
 
 ## インストール
 
-1. `avatar_mesh_toolkit` フォルダをZIP圧縮します。
+1. `NuniAvatarToolkit` フォルダをZIP圧縮します。
 2. Blenderの `編集 > プリファレンス > アドオン > インストール` から、作成したZIPファイルを選択します。
-3. 一覧に表示された「Avatar Mesh Toolkit」にチェックを入れて有効化します。
+3. 一覧に表示された「NuniAvatarToolkit」にチェックを入れて有効化します。
 4. 3Dビューポートのサイドバー(`N`キー)に「Avatar Toolkit」タブが追加されます。
 
 ## 各機能の使い方
