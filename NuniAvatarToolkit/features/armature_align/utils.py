@@ -29,7 +29,7 @@ def get_bone_rest_world_head(obj, bone_name):
     multiplying by obj.matrix_world yields world coordinates even when obj.location is (0, 0, 0).
     Raises ValueError if bone_name does not exist on obj."""
     if bone_name not in obj.data.bones:
-        raise ValueError(f"ボーン『{bone_name}』が見つかりません")
+        raise ValueError(f"ボーン「{bone_name}」が見つかりません")
     bone = obj.data.bones[bone_name]
     return obj.matrix_world @ bone.head_local
 
