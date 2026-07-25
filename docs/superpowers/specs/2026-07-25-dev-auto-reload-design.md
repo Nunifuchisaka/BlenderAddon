@@ -105,10 +105,10 @@ Blenderが管理するアドオンディレクトリの外に開発用スクリ�
 **処理:**
 
 1. 対象Blenderの実行ファイル `C:\Program Files\Blender Foundation\Blender <BlenderVersion>\blender.exe` の存在を確認する。無ければエラー終了。
-2. 開発用スクリプトディレクトリ `%LOCALAPPDATA%\NuniAvatarToolkitDev\addons` を作成する（既存なら何もしない）。
+2. 開発用ディレクトリ `%LOCALAPPDATA%\NuniAvatarToolkitDev\addons`(`<devroot>\addons`)を作成する（既存なら何もしない）。
 3. ジャンクションを作成する。既存のジャンクションがあれば作り直す:
-   - `<devdir>\addons\NuniAvatarToolkit` → `<RepoRoot>\NuniAvatarToolkit`
-   - `<devdir>\addons\nuni_dev_reload` → `<RepoRoot>\tools\nuni_dev_reload`
+   - `<devroot>\addons\NuniAvatarToolkit` → `<RepoRoot>\NuniAvatarToolkit`
+   - `<devroot>\addons\nuni_dev_reload` → `<RepoRoot>\tools\nuni_dev_reload`
    - 作成には `New-Item -ItemType Junction` を使う。ジャンクションは管理者権限を必要としない（シンボリックリンクと異なる点）。
 4. Blenderのアドオンフォルダ `%APPDATA%\Blender Foundation\Blender\<BlenderVersion>\scripts\addons\NuniAvatarToolkit` が**実体ディレクトリとして**存在する場合、削除する。
    - ジャンクションだった場合は `Remove-Item` で参照だけを削除する（リンク先は消さない）。
@@ -118,7 +118,7 @@ Blenderが管理するアドオンディレクトリの外に開発用スクリ�
    blender.exe --background --python-expr "<スクリプト>"
    ```
    実行するPythonの内容:
-   - 既に同じパスが `bpy.context.preferences.filepaths.script_directories` に登録済みでなければ `bpy.ops.preferences.script_directory_add(directory=<devdir>)` を実行する。
+   - 既に同じパスが `bpy.context.preferences.filepaths.script_directories` に登録済みでなければ `bpy.ops.preferences.script_directory_add(directory=<devroot>)` を実行する。**登録する値は`<devroot>`(`addons`の親)であり、`<devroot>\addons`ではない**。Blenderの`addon_utils.paths()`は登録した各スクリプトディレクトリに対して自動的に`addons`サブフォルダを付加して探索するため、`<devroot>\addons`自体を登録すると`<devroot>\addons\addons`を探しにいってしまいアドオンが見つからない(実機のBlender 5.2で確認済み)。
    - `bpy.ops.preferences.addon_refresh()` でアドオン一覧を再走査する。
    - `addon_utils.enable("nuni_dev_reload", default_set=True)` と `addon_utils.enable("NuniAvatarToolkit", default_set=True)` を実行する。
    - `bpy.ops.wm.save_userpref()` で設定を保存する。

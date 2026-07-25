@@ -12,7 +12,8 @@
 
 - 対象OSはWindowsのみ。PowerShellはWindows PowerShell 5.1構文を使う(`&&`/`||`/三項演算子は不可)。
 - ジャンクション作成に管理者権限は不要(シンボリックリンクと異なる)。
-- 開発用ディレクトリは `%LOCALAPPDATA%\NuniAvatarToolkitDev\addons` に置く。リポジトリ内には置かない。
+- ジャンクションは `%LOCALAPPDATA%\NuniAvatarToolkitDev\addons` 配下に置く。リポジトリ内には置かない。
+- Blenderに`script_directory_add`で登録する値は、その**親**である `%LOCALAPPDATA%\NuniAvatarToolkitDev` にする(`...\addons`ではない)。Blenderの`addon_utils.paths()`は登録した各スクリプトディレクトリに対して自動的に`addons`サブフォルダを付加して探索するため(`addon_utils.py`のソースおよび実機で確認済み)、`...\addons`自体を登録すると`...\addons\addons`を探しにいってしまい、アドオンが一切見つからない。
 - 監視・リロード対象パッケージ名は定数 `WATCH_PACKAGE = "NuniAvatarToolkit"`。
 - 監視間隔は定数 `POLL_INTERVAL = 1.0`(秒)。
 - `tools/` 配下は配布ZIP(`NuniAvatarToolkit/` フォルダのみを圧縮)に含まれない。
@@ -331,7 +332,8 @@ if (-not (Test-Path $blenderExe)) {
     exit 1
 }
 
-$devAddonsDir = Join-Path $env:LOCALAPPDATA "NuniAvatarToolkitDev\addons"
+$devRoot = Join-Path $env:LOCALAPPDATA "NuniAvatarToolkitDev"
+$devAddonsDir = Join-Path $devRoot "addons"
 New-Item -ItemType Directory -Force -Path $devAddonsDir | Out-Null
 
 $junctions = @(
@@ -347,7 +349,7 @@ foreach ($j in $junctions) {
     if (Test-Path $j.Link) {
         $item = Get-Item $j.Link
         if ($item.LinkType -eq "Junction") {
-            Remove-Item $j.Link -Force -Confirm:$false
+            Remove-Item $j.Link -Force -Recurse -Confirm:$false
         } else {
             Write-Error "$($j.Link) はジャンクションではない実体です。手動で確認してください。"
             exit 1
@@ -362,7 +364,7 @@ $staleCopy = Join-Path $blenderAddonsRoot "NuniAvatarToolkit"
 if (Test-Path $staleCopy) {
     $item = Get-Item $staleCopy
     if ($item.LinkType -eq "Junction" -or $item.LinkType -eq "SymbolicLink") {
-        Remove-Item $staleCopy -Force -Confirm:$false
+        Remove-Item $staleCopy -Force -Recurse -Confirm:$false
         Write-Output "既存のリンクを削除しました: $staleCopy"
     } else {
         Remove-Item $staleCopy -Recurse -Force -Confirm:$false
@@ -374,7 +376,7 @@ $pyScript = @"
 import bpy
 import addon_utils
 
-dev_dir = r'$devAddonsDir'
+dev_dir = r'$devRoot'
 existing = [d.directory for d in bpy.context.preferences.filepaths.script_directories]
 if dev_dir not in existing:
     bpy.ops.preferences.script_directory_add(directory=dev_dir)
@@ -430,16 +432,16 @@ Expected: 両方とも `LinkType` が `Junction`、`Target` がリポジトリ�
 import bpy
 import addon_utils
 
-dev_dir = r"$env:LOCALAPPDATA\NuniAvatarToolkitDev\addons".replace("$", "")
+dev_dir = r"$env:LOCALAPPDATA\NuniAvatarToolkitDev".replace("$", "")
 ```
 
-上記はシェル変数展開が効かないため、PowerShellから直接埋め込む形で以下のスクリプトを生成して実行する。
+上記はシェル変数展開が効かないため、PowerShellから直接埋め込む形で以下のスクリプトを生成して実行する。`script_directories`に登録されているのは`...\addons`ではなくその親(`...\NuniAvatarToolkitDev`)である点に注意(Blenderの`addon_utils.paths()`が各登録ディレクトリに`addons`を自動で付加するため)。
 
 Run:
 ```powershell
 $check = @"
 import bpy
-dev_dir = r'$env:LOCALAPPDATA\NuniAvatarToolkitDev\addons'
+dev_dir = r'$env:LOCALAPPDATA\NuniAvatarToolkitDev'
 dirs = [d.directory for d in bpy.context.preferences.filepaths.script_directories]
 assert dev_dir in dirs, f'script_directoryに未登録: {dirs}'
 enabled = {m.__name__ for m in __import__('addon_utils').modules() if __import__('addon_utils').check(m.__name__)[0]}
@@ -505,7 +507,7 @@ addon_utils.disable('NuniAvatarToolkit', default_set=True)
 addon_utils.disable('nuni_dev_reload', default_set=True)
 print('addons disabled')
 
-dev_dir = r'$devAddonsDir'
+dev_dir = r'$devDir'
 dirs = bpy.context.preferences.filepaths.script_directories
 target_index = None
 for i, d in enumerate(dirs):
@@ -534,7 +536,7 @@ if ($LASTEXITCODE -ne 0) {
 if (Test-Path $devAddonsDir) {
     Get-ChildItem -Path $devAddonsDir -Force | ForEach-Object {
         if ($_.LinkType -eq "Junction" -or $_.LinkType -eq "SymbolicLink") {
-            Remove-Item $_.FullName -Force -Confirm:$false
+            Remove-Item $_.FullName -Force -Recurse -Confirm:$false
             Write-Output "削除: $($_.FullName)"
         } else {
             Write-Warning "$($_.FullName) はジャンクションではないため残しました。"
@@ -576,7 +578,7 @@ Expected: `False`
 ```powershell
 $check = @"
 import bpy
-dev_dir = r'$env:LOCALAPPDATA\NuniAvatarToolkitDev\addons'
+dev_dir = r'$env:LOCALAPPDATA\NuniAvatarToolkitDev'
 dirs = [d.directory for d in bpy.context.preferences.filepaths.script_directories]
 assert dev_dir not in dirs, f'script_directoryが残っている: {dirs}'
 print('TASK3_VERIFY_OK')
