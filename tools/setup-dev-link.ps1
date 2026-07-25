@@ -1,4 +1,3 @@
-[CmdletBinding()]
 param(
     [string]$BlenderVersion = "5.2",
     [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot)
