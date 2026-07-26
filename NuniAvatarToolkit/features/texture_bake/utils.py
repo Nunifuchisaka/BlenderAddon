@@ -8,6 +8,7 @@ but it still defines no bpy.types classes, so it needs no register()/unregister(
 import bmesh
 import bpy
 import numpy as np
+from datetime import datetime
 
 
 def duplicate_source_for_bake(context, source_obj, material_slot_index, name="AMT_BakeProxy"):
@@ -68,10 +69,19 @@ def compute_uv_bbox(mesh, uv_layer_name):
     )
 
 
-def remap_uv_layer(mesh, uv_layer_name, src_bbox, dst_rect, fit_mode='UNIFORM'):
+def remap_uv_layer(
+    mesh,
+    uv_layer_name,
+    src_bbox,
+    dst_rect,
+    fit_mode='UNIFORM',
+    manual_offset=(0.0, 0.0),
+    manual_scale=(1.0, 1.0),
+):
     """Applies one rigid affine transform (scale + offset) mapping src_bbox onto dst_rect,
     to every UV coordinate in uv_layer_name. UNIFORM preserves aspect ratio (letterboxed
     within dst_rect); STRETCH fills dst_rect exactly, distorting if aspect ratios differ.
+    manual_offset and manual_scale are then applied around the destination rectangle centre.
     """
     src_min_u, src_min_v, src_max_u, src_max_v = src_bbox
     dst_min_u, dst_min_v, dst_max_u, dst_max_v = dst_rect
@@ -98,6 +108,13 @@ def remap_uv_layer(mesh, uv_layer_name, src_bbox, dst_rect, fit_mode='UNIFORM'):
 
     coords[:, 0] = (coords[:, 0] - src_min_u) * scale_u + offset_u
     coords[:, 1] = (coords[:, 1] - src_min_v) * scale_v + offset_v
+
+    center_u = (dst_min_u + dst_max_u) * 0.5
+    center_v = (dst_min_v + dst_max_v) * 0.5
+    manual_offset_u, manual_offset_v = manual_offset
+    manual_scale_u, manual_scale_v = manual_scale
+    coords[:, 0] = (coords[:, 0] - center_u) * manual_scale_u + center_u + manual_offset_u
+    coords[:, 1] = (coords[:, 1] - center_v) * manual_scale_v + center_v + manual_offset_v
 
     uv_layer.data.foreach_set('uv', coords.reshape(-1))
     mesh.update()
@@ -130,6 +147,92 @@ def add_bake_target_node(material, image):
     bake_node.location = (0, 300)
     node_tree.nodes.active = bake_node
     return bake_node
+
+
+def get_target_material_image(target_obj, material_slot_index, bake_type):
+  """Return the image connected to the target material for a bake pass.
+
+  The image is resolved from the material slot that owns the selected freed UV
+  region.  This keeps the bake destination tied to the target mesh instead of
+  relying on a separately selected Image datablock.
+  """
+  if not (0 <= material_slot_index < len(target_obj.material_slots)):
+    raise ValueError("選択した解放UV領域のマテリアルスロットが見つかりません")
+  material = target_obj.material_slots[material_slot_index].material
+  if material is None or material.node_tree is None:
+    raise ValueError("選択した解放UV領域のマテリアルにノードが設定されていません")
+
+  principled = next(
+    (node for node in material.node_tree.nodes if node.type == 'BSDF_PRINCIPLED'),
+    None,
+  )
+  if principled is not None:
+    input_names = {
+      'DIFFUSE': ('Base Color',),
+      'NORMAL': ('Normal',),
+      'ROUGHNESS': ('Roughness',),
+      'EMIT': ('Emission Color', 'Emission'),
+    }.get(bake_type, ())
+    for input_name in input_names:
+      socket = principled.inputs.get(input_name)
+      image = _find_image_from_socket(socket)
+      if image is not None:
+        return image
+
+  image = next(
+    (node.image for node in material.node_tree.nodes
+     if node.type == 'TEX_IMAGE' and node.image is not None),
+    None,
+  )
+  if image is None:
+    raise ValueError("選択した解放UV領域のマテリアルからテクスチャ画像を取得できません")
+  return image
+
+
+def _find_image_from_socket(socket, visited=None):
+  """Follow a node input upstream and return its first Image Texture image."""
+  if socket is None or not socket.is_linked:
+    return None
+  if visited is None:
+    visited = set()
+  link = socket.links[0]
+  node = link.from_node
+  if node in visited:
+    return None
+  visited.add(node)
+  if node.type == 'TEX_IMAGE':
+    return node.image
+  for input_socket in node.inputs:
+    image = _find_image_from_socket(input_socket, visited)
+    if image is not None:
+      return image
+  return None
+
+
+def create_image_backup(image):
+  """Create an independent, retained image backup before modifying an image."""
+  timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+  backup_name = f"{image.name}_AMT_Backup_{timestamp}"
+  try:
+    width, height = image.size
+    backup = bpy.data.images.new(
+      backup_name,
+      width=width,
+      height=height,
+      alpha=image.channels == 4,
+      float_buffer=image.is_float,
+    )
+    pixels = np.empty(width * height * 4, dtype=np.float32)
+    image.pixels.foreach_get(pixels)
+    backup.pixels.foreach_set(pixels)
+    backup.colorspace_settings.name = image.colorspace_settings.name
+    backup.use_fake_user = True
+    backup.update()
+  except (RuntimeError, ValueError) as exc:
+    if 'backup' in locals() and backup.users == 0:
+      bpy.data.images.remove(backup)
+    raise ValueError(f"'{image.name}' のバックアップを作成できません: {exc}") from exc
+  return backup
 
 
 def run_self_bake(context, proxy_obj, uv_layer_name, bake_type, margin_px, samples):

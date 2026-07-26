@@ -34,6 +34,15 @@ def refresh_available_rects(props):
 
 def _on_target_object_update(self, context):
     refresh_available_rects(self)
+    _refresh_uv_preview(self, context)
+
+
+def _refresh_uv_preview(props, context):
+    """Refresh an already-open preview as soon as placement settings change."""
+    if bpy.data.images.get("AMT_UVPreview") is None:
+        return
+    from .operators import OBJECT_OT_amt_texture_bake_preview_uv
+    OBJECT_OT_amt_texture_bake_preview_uv._create_preview_image(props)
 
 
 class AMT_FreedUVRectItem(bpy.types.PropertyGroup):
@@ -60,13 +69,13 @@ class AMT_UL_freed_uv_rects(bpy.types.UIList):
 class AMT_TextureBakeProperties(bpy.types.PropertyGroup):
     target_object: bpy.props.PointerProperty(
         type=bpy.types.Object,
-        name="対象ボディメッシュ",
-        description="隠れメッシュ削除で解放されたUV領域を持つメッシュを指定してください",
+        name="対象メッシュ",
+        description="隠れメッシュ削除で解放されたUV領域を持つメッシュを指定してください。ボディ以外のメッシュも指定できます",
         poll=_mesh_object_poll,
         update=_on_target_object_update,
     )
     available_rects: bpy.props.CollectionProperty(type=AMT_FreedUVRectItem)
-    selected_rect_index: bpy.props.IntProperty()
+    selected_rect_index: bpy.props.IntProperty(update=_refresh_uv_preview)
 
     source_object: bpy.props.PointerProperty(
         type=bpy.types.Object,
@@ -76,22 +85,19 @@ class AMT_TextureBakeProperties(bpy.types.PropertyGroup):
             "(服に限らず、シーン内の任意のメッシュオブジェクトを選択できます)"
         ),
         poll=_mesh_object_poll,
+        update=_refresh_uv_preview,
     )
     source_material_index: bpy.props.IntProperty(
         name="ベイク元マテリアルスロット",
         description="ベイク元メッシュの中で、どのマテリアルスロットの外観を焼き込むかを指定します",
         default=0, min=0,
+        update=_refresh_uv_preview,
     )
 
-    bake_diffuse: bpy.props.BoolProperty(name="Diffuse(拡散色)", default=True)
-    bake_normal: bpy.props.BoolProperty(name="Normal(法線)", default=False)
-    bake_roughness: bpy.props.BoolProperty(name="Roughness(粗さ)", default=False)
-    bake_emit: bpy.props.BoolProperty(name="Emit(発光)", default=False)
-
-    target_image_diffuse: bpy.props.PointerProperty(type=bpy.types.Image, name="Diffuseベイク先画像")
-    target_image_normal: bpy.props.PointerProperty(type=bpy.types.Image, name="Normalベイク先画像")
-    target_image_roughness: bpy.props.PointerProperty(type=bpy.types.Image, name="Roughnessベイク先画像")
-    target_image_emit: bpy.props.PointerProperty(type=bpy.types.Image, name="Emitベイク先画像")
+    bake_diffuse: bpy.props.BoolProperty(name="Diffuse(拡散色)", default=True, update=_refresh_uv_preview)
+    bake_normal: bpy.props.BoolProperty(name="Normal(法線)", default=False, update=_refresh_uv_preview)
+    bake_roughness: bpy.props.BoolProperty(name="Roughness(粗さ)", default=False, update=_refresh_uv_preview)
+    bake_emit: bpy.props.BoolProperty(name="Emit(発光)", default=False, update=_refresh_uv_preview)
 
     fit_mode: bpy.props.EnumProperty(
         name="フィット方式",
@@ -101,14 +107,28 @@ class AMT_TextureBakeProperties(bpy.types.PropertyGroup):
             ('STRETCH', "矩形に合わせて伸縮", "矩形いっぱいに引き伸ばします(縦横比が変わり歪む場合があります)"),
         ],
         default='UNIFORM',
+        update=_refresh_uv_preview,
+    )
+    source_uv_offset_u: bpy.props.FloatProperty(
+        name="移動 U",
+        description="統合元UVをU方向へ移動します。UV座標単位で指定します",
+        default=0.0, min=-2.0, max=2.0,
+        update=_refresh_uv_preview,
+    )
+    source_uv_offset_v: bpy.props.FloatProperty(
+        name="移動 V",
+        description="統合元UVをV方向へ移動します。UV座標単位で指定します",
+        default=0.0, min=-2.0, max=2.0,
+        update=_refresh_uv_preview,
+    )
+    source_uv_scale: bpy.props.FloatProperty(
+        name="拡縮",
+        description="統合元UVを縦横比を保ったまま拡縮します。1.0が自動フィット時の大きさです",
+        default=1.0, min=0.01, max=10.0,
+        update=_refresh_uv_preview,
     )
     margin_px: bpy.props.IntProperty(name="マージン(px)", default=16, min=0, max=64)
     samples: bpy.props.IntProperty(name="サンプル数", default=32, min=1, max=512)
-    use_new_image_copy: bpy.props.BoolProperty(
-        name="新規コピー画像にベイク",
-        description="元の画像を直接書き換えず、複製した新しい画像にベイクします(推奨)。オフにすると元の画像を直接上書きします",
-        default=True,
-    )
     consume_rect_after_bake: bpy.props.BoolProperty(
         name="ベイク後に解放領域を消費済みにする",
         description="有効にしたベイクが全て成功した場合、選択した解放領域を記録から削除します",

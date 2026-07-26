@@ -31,6 +31,8 @@ class VIEW3D_PT_amt_texture_bake(bpy.types.Panel):
                 rows=3,
             )
         row.operator("object.amt_texture_bake_refresh_rects", text="", icon='FILE_REFRESH')
+        if len(props.available_rects) > 0:
+            layout.operator("object.amt_texture_bake_preview_uv", text="UVプレビューを開く", icon='UV')
 
         layout.separator()
         col = layout.column(align=True)
@@ -46,24 +48,23 @@ class VIEW3D_PT_amt_texture_bake(bpy.types.Panel):
         row.prop(props, "bake_roughness", toggle=True)
         row.prop(props, "bake_emit", toggle=True)
 
-        if props.bake_diffuse:
-            col.prop(props, "target_image_diffuse")
-        if props.bake_normal:
-            col.prop(props, "target_image_normal")
-        if props.bake_roughness:
-            col.prop(props, "target_image_roughness")
-        if props.bake_emit:
-            col.prop(props, "target_image_emit")
+        col.label(text="ベイク先画像は対象メッシュのマテリアルから取得します", icon='INFO')
 
         layout.separator()
         col = layout.column(align=True)
         col.prop(props, "fit_mode")
+        col.label(text="統合元UVの調整:")
+        row = col.row(align=True)
+        row.prop(props, "source_uv_offset_u")
+        row.prop(props, "source_uv_offset_v")
+        col.prop(props, "source_uv_scale")
+        col.label(text="調整値は表示中のUVプレビューへすぐ反映されます", icon='INFO')
         col.prop(props, "margin_px")
         col.prop(props, "samples")
 
         layout.separator()
         col = layout.column(align=True)
-        col.prop(props, "use_new_image_copy")
+        col.label(text="ベイク前に元画像のバックアップを自動作成します", icon='FILE_BACKUP')
         col.prop(props, "consume_rect_after_bake")
 
         layout.separator()
