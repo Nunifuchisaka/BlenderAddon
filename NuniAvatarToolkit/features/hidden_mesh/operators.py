@@ -2,11 +2,39 @@ import time
 
 import bmesh
 import bpy
-import numpy as np
 
-from ...core import mesh_eval, uv_regions
-from ...core.context_utils import reset_to_object_mode_with_active
-from . import utils
+from . import api, utils
+
+
+class OBJECT_OT_amt_add_clothing_object(bpy.types.Operator):
+    bl_idname = "object.amt_add_clothing_object"
+    bl_label = "服メッシュを追加"
+    bl_description = "遮蔽物として扱う服メッシュの選択欄を追加します"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        props = context.scene.amt_hidden_mesh
+        props.clothing_objects.add()
+        props.clothing_objects_index = len(props.clothing_objects) - 1
+        return {'FINISHED'}
+
+
+class OBJECT_OT_amt_remove_clothing_object(bpy.types.Operator):
+    bl_idname = "object.amt_remove_clothing_object"
+    bl_label = "服メッシュを削除"
+    bl_description = "選択中の服メッシュ欄を一覧から削除します"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return len(context.scene.amt_hidden_mesh.clothing_objects) > 0
+
+    def execute(self, context):
+        props = context.scene.amt_hidden_mesh
+        index = min(props.clothing_objects_index, len(props.clothing_objects) - 1)
+        props.clothing_objects.remove(index)
+        props.clothing_objects_index = min(index, max(0, len(props.clothing_objects) - 1))
+        return {'FINISHED'}
 
 
 class OBJECT_OT_amt_select_hidden_faces(bpy.types.Operator):
@@ -26,71 +54,48 @@ class OBJECT_OT_amt_select_hidden_faces(bpy.types.Operator):
         props = context.scene.amt_hidden_mesh
         if props.body_object is None or props.body_object.type != 'MESH':
             return False
-        return props.clothing_collection is not None or props.include_body_self_occlusion
+        has_clothing = any(item.object is not None for item in props.clothing_objects)
+        return has_clothing or props.include_body_self_occlusion
 
     def invoke(self, context, event):
         scene = context.scene
         props = scene.amt_hidden_mesh
-        body_obj = props.body_object
-
-        reset_to_object_mode_with_active(context, body_obj)
-
-        depsgraph = context.evaluated_depsgraph_get()
-
-        clothing_objs = utils.get_clothing_objects(props.clothing_collection, body_obj)
-        if not clothing_objs and not props.include_body_self_occlusion:
-            self.report({'ERROR'}, "服コレクションに有効なメッシュがありません")
+        clothing_objs = [item.object for item in props.clothing_objects if item.object is not None]
+        try:
+            self._session = api.AnalysisSession(
+                context,
+                props.body_object,
+                clothing_objs,
+                ray_samples=props.ray_samples,
+                ray_epsilon_ratio=props.ray_epsilon_ratio,
+                face_select_mode=props.face_select_mode,
+                safety_margin=props.safety_margin,
+                include_body_self_occlusion=props.include_body_self_occlusion,
+                self_occlusion_min_distance_ratio=props.self_occlusion_min_distance_ratio,
+                exclude_vertex_group=props.exclude_vertex_group,
+            )
+        except api.HiddenMeshError as exc:
+            self.report({'ERROR'}, str(exc))
             return {'CANCELLED'}
 
-        clothing_bvh, clothing_min, clothing_max = mesh_eval.build_bvh_from_objects(depsgraph, clothing_objs)
-
-        self_bvh = None
-        if props.include_body_self_occlusion:
-            self_bvh, _, _ = mesh_eval.build_bvh_from_objects(depsgraph, [body_obj])
-
-        if clothing_bvh is None and self_bvh is None:
-            self.report({'ERROR'}, "遮蔽物として使用できるメッシュがありません")
-            return {'CANCELLED'}
-
-        positions, normals, used_evaluated = mesh_eval.snapshot_deform_only(depsgraph, body_obj)
-        if not used_evaluated:
+        if not self._session.used_evaluated_mesh:
             self.report({'WARNING'}, "一部のモディファイア構成のため、変形前(レスト)座標で判定しました")
 
-        bbox_diagonal = mesh_eval.compute_bbox_diagonal(positions)
-        epsilon = max(bbox_diagonal * props.ray_epsilon_ratio, 1e-6)
-        max_distance = max(bbox_diagonal * utils.RAY_MAX_DISTANCE_FACTOR, 1.0)
-        self_min_distance = max(bbox_diagonal * props.self_occlusion_min_distance_ratio, epsilon * 4.0)
-
-        protected_mask = utils.get_protected_vertex_mask(body_obj, props.exclude_vertex_group)
-
-        total = len(positions)
-        estimate = total * props.ray_samples
-        if estimate > utils.PERFORMANCE_WARNING_VERTEX_SAMPLES:
+        if self._session.estimated_ray_count > utils.PERFORMANCE_WARNING_VERTEX_SAMPLES:
             self.report(
                 {'WARNING'},
-                f"頂点数×サンプル数が多いため処理に時間がかかる可能性があります({total} x {props.ray_samples})",
+                f"頂点数×サンプル数が多いため処理に時間がかかる可能性があります"
+                f"({self._session.total} x {props.ray_samples})",
             )
 
-        self._flags = np.zeros(total, dtype=bool)
-        self._gen = utils.iter_hidden_vertex_flags(
-            positions, normals, self._flags,
-            clothing_bvh=clothing_bvh,
-            clothing_bounds=(clothing_min, clothing_max),
-            self_bvh=self_bvh,
-            protected_mask=protected_mask,
-            sample_count=props.ray_samples,
-            epsilon=epsilon,
-            max_distance=max_distance,
-            self_min_distance=self_min_distance,
-        )
-        self._body_obj = body_obj
-        self._face_mode = props.face_select_mode
-        self._total = total
+        self._gen = self._session
+        self._total = self._session.total
         self._index = 0
         self._time_budget = 0.03
 
         wm = context.window_manager
-        wm.progress_begin(0, total)
+        wm.progress_begin(0, self._total)
+        self._progress_active = True
         self._timer = wm.event_timer_add(0.02, window=context.window)
         wm.modal_handler_add(self)
         context.workspace.status_text_set("隠れメッシュ削除: 解析中... (ESCでキャンセル)")
@@ -111,8 +116,17 @@ class OBJECT_OT_amt_select_hidden_faces(bpy.types.Operator):
                 next(self._gen)
                 self._index += 1
         except StopIteration:
-            self._finish(context)
-            return {'FINISHED'}
+            try:
+                self._finish(context)
+                return {'FINISHED'}
+            except Exception as exc:
+                self._cleanup(context)
+                self.report({'ERROR'}, f"解析結果の反映中にエラーが発生しました: {exc}")
+                return {'CANCELLED'}
+        except Exception as exc:
+            self._cleanup(context)
+            self.report({'ERROR'}, f"解析中にエラーが発生しました: {exc}")
+            return {'CANCELLED'}
 
         context.window_manager.progress_update(self._index)
         context.workspace.status_text_set(f"隠れメッシュ削除: 解析中... {self._index}/{self._total} (ESCでキャンセル)")
@@ -122,34 +136,31 @@ class OBJECT_OT_amt_select_hidden_faces(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
     def _finish(self, context):
-        body_obj = self._body_obj
-        mesh = body_obj.data
-        hidden_face_mask = utils.compute_hidden_face_mask(mesh, self._flags, self._face_mode)
-        hidden_count = int(hidden_face_mask.sum())
-
-        reset_to_object_mode_with_active(context, body_obj)
-        bpy.ops.object.mode_set(mode='EDIT')
-        context.tool_settings.mesh_select_mode = (False, False, True)
-        bpy.ops.mesh.select_all(action='DESELECT')
-
-        bm = bmesh.from_edit_mesh(mesh)
-        bm.faces.ensure_lookup_table()
-        for idx, hidden in enumerate(hidden_face_mask):
-            if hidden:
-                bm.faces[idx].select = True
-        bmesh.update_edit_mesh(mesh)
+        analysis = self._session.finish()
+        body_object = self._session.body_object
+        api.select_faces(context, body_object, analysis.hidden_face_indices)
 
         self._cleanup(context)
-        self.report({'INFO'}, f"{hidden_count} / {len(mesh.polygons)} 面を隠れ面として選択しました")
+        message = (
+            f"{analysis.hidden_face_count} / {len(body_object.data.polygons)} 面を"
+            "隠れ面として選択しました"
+        )
+        margin_removed = analysis.raw_hidden_face_count - analysis.hidden_face_count
+        if margin_removed:
+            message += f"(安全余白で{margin_removed}面を保護)"
+        self.report({'INFO'}, message)
 
     def _cleanup(self, context):
         wm = context.window_manager
         if self._timer is not None:
             wm.event_timer_remove(self._timer)
             self._timer = None
-        wm.progress_end()
+        if getattr(self, '_progress_active', False):
+            wm.progress_end()
+            self._progress_active = False
         context.workspace.status_text_set(None)
         self._gen = None
+        self._session = None
 
     def cancel(self, context):
         self._cleanup(context)
@@ -166,7 +177,7 @@ class OBJECT_OT_amt_delete_hidden_faces(bpy.types.Operator):
         "シェイプキー(表情・視線等)や、ゲーム内で切り替える",
         "別の服を装着したときにだけ見える面が含まれていないか、",
         "必ず確認してから実行してください。",
-        "作業前にファイルを保存することを推奨します。",
+        "削除前のボディはAMT_Backupsコレクションへ自動保存されます。",
     )
 
     @classmethod
@@ -184,37 +195,39 @@ class OBJECT_OT_amt_delete_hidden_faces(bpy.types.Operator):
 
     def execute(self, context):
         obj = context.active_object
-        mesh = obj.data
-        bm = bmesh.from_edit_mesh(mesh)
-        selected_faces = [f for f in bm.faces if f.select]
-        if not selected_faces:
+        bm = bmesh.from_edit_mesh(obj.data)
+        bm.faces.ensure_lookup_table()
+        bm.faces.index_update()
+        selected_face_indices = [face.index for face in bm.faces if face.select]
+        if not selected_face_indices:
             self.report({'WARNING'}, "選択された面がありません")
             return {'CANCELLED'}
-        count = len(selected_faces)
 
-        # Captured here (using the actual selection, which the user may have hand-adjusted
-        # since "select hidden faces" ran) because this is the last moment the UV data of the
-        # about-to-be-destroyed faces still exists; the texture_bake feature reads this later
-        # to let the user reclaim the freed texture space.
-        rects_captured = 0
-        uv_layer = bm.loops.layers.uv.active
-        if uv_layer is not None:
-            new_rects = uv_regions.compute_freed_uv_rects(selected_faces, uv_layer, obj.name)
-            if new_rects:
-                uv_regions.add_freed_rects(mesh, new_rects)
-                rects_captured = len(new_rects)
+        try:
+            result = api.delete_faces(context, obj, selected_face_indices)
+        except (api.HiddenMeshError, RuntimeError) as exc:
+            self.report({'ERROR'}, f"面を削除できませんでした: {exc}")
+            return {'CANCELLED'}
 
-        bmesh.ops.delete(bm, geom=selected_faces, context='FACES')
-        bmesh.update_edit_mesh(mesh)
-
-        msg = f"{count} 面を削除しました"
-        if rects_captured:
-            msg += f"({rects_captured} 個のUV解放領域を記録し、テクスチャベイク機能で再利用できます)"
+        msg = (
+            f"{result['deleted_face_count']} 面を削除し、"
+            f"バックアップ「{result['backup_object']}」を作成しました"
+        )
+        if result['freed_uv_region_count']:
+            msg += (
+                f"({result['freed_uv_region_count']} 個のUV解放領域を記録し、"
+                "テクスチャベイク機能で再利用できます)"
+            )
         self.report({'INFO'}, msg)
         return {'FINISHED'}
 
 
-_classes = (OBJECT_OT_amt_select_hidden_faces, OBJECT_OT_amt_delete_hidden_faces)
+_classes = (
+    OBJECT_OT_amt_add_clothing_object,
+    OBJECT_OT_amt_remove_clothing_object,
+    OBJECT_OT_amt_select_hidden_faces,
+    OBJECT_OT_amt_delete_hidden_faces,
+)
 
 
 def register():

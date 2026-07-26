@@ -3,6 +3,11 @@ import bpy
 from ...core.ui import TOOLKIT_CATEGORY
 
 
+class AMT_UL_hidden_mesh_clothing_objects(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        layout.prop(item, "object", text="", emboss=True, icon='MESH_DATA')
+
+
 class VIEW3D_PT_amt_hidden_mesh(bpy.types.Panel):
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
@@ -16,13 +21,28 @@ class VIEW3D_PT_amt_hidden_mesh(bpy.types.Panel):
 
         col = layout.column(align=True)
         col.prop(props, "body_object")
-        col.prop(props, "clothing_collection")
+
+        col.label(text="服メッシュ")
+        row = col.row()
+        row.template_list(
+            "AMT_UL_hidden_mesh_clothing_objects",
+            "",
+            props,
+            "clothing_objects",
+            props,
+            "clothing_objects_index",
+            rows=3,
+        )
+        buttons = row.column(align=True)
+        buttons.operator("object.amt_add_clothing_object", text="", icon='ADD')
+        buttons.operator("object.amt_remove_clothing_object", text="", icon='REMOVE')
 
         layout.separator()
         col = layout.column(align=True)
         col.prop(props, "ray_samples")
         col.prop(props, "ray_epsilon_ratio")
         col.prop(props, "face_select_mode")
+        col.prop(props, "safety_margin")
 
         layout.separator()
         box = layout.box()
@@ -43,7 +63,7 @@ class VIEW3D_PT_amt_hidden_mesh(bpy.types.Panel):
         col.operator("object.amt_delete_hidden_faces", icon='TRASH')
 
 
-_classes = (VIEW3D_PT_amt_hidden_mesh,)
+_classes = (AMT_UL_hidden_mesh_clothing_objects, VIEW3D_PT_amt_hidden_mesh)
 
 
 def register():

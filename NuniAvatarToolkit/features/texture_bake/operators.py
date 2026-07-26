@@ -85,6 +85,8 @@ class OBJECT_OT_amt_texture_bake_run(bpy.types.Operator):
 
         lines = []
         succeeded_all = True
+        created_images = []
+        successful_images = []
         try:
             src_bbox = utils.compute_uv_bbox(proxy_obj.data, original_uv_layer_name)
             remap_layer = proxy_obj.data.uv_layers.new(name="AMT_BakeTarget")
@@ -102,6 +104,7 @@ class OBJECT_OT_amt_texture_bake_run(bpy.types.Operator):
                 if props.use_new_image_copy:
                     target_image = source_image.copy()
                     target_image.name = f"{source_image.name}_AMT_{bake_type.lower()}"
+                    created_images.append(target_image)
 
                 utils.add_bake_target_node(proxy_material, target_image)
                 try:
@@ -116,6 +119,8 @@ class OBJECT_OT_amt_texture_bake_run(bpy.types.Operator):
 
                 if not target_image.packed_file:
                     target_image.pack()
+                if props.use_new_image_copy:
+                    successful_images.append(target_image)
 
                 if props.use_new_image_copy:
                     lines.append(('INFO', f"{label}: 新規画像 '{target_image.name}' にベイクしました"))
@@ -123,6 +128,9 @@ class OBJECT_OT_amt_texture_bake_run(bpy.types.Operator):
                     lines.append(('INFO', f"{label}: '{target_image.name}' に直接ベイクしました"))
         finally:
             utils.cleanup_proxy(proxy_obj)
+            for image in created_images:
+                if image not in successful_images and image.users == 0:
+                    bpy.data.images.remove(image)
             for obj in context.selected_objects:
                 obj.select_set(False)
             for obj in prev_selected:

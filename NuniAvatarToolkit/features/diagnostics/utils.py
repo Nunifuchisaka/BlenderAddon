@@ -99,7 +99,12 @@ def has_non_uniform_or_negative_scale(obj):
 
 
 def has_unapplied_rotation(obj):
-    return any(abs(v) > 1e-6 for v in obj.rotation_euler)
+  if obj.rotation_mode == 'QUATERNION':
+    w, x, y, z = obj.rotation_quaternion
+    return abs(abs(w) - 1.0) > 1e-6 or any(abs(v) > 1e-6 for v in (x, y, z))
+  if obj.rotation_mode == 'AXIS_ANGLE':
+    return abs(obj.rotation_axis_angle[0]) > 1e-6
+  return any(abs(v) > 1e-6 for v in obj.rotation_euler)
 
 
 def count_non_manifold(obj):

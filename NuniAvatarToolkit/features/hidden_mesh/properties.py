@@ -5,6 +5,15 @@ def _mesh_object_poll(self, obj):
     return obj.type == 'MESH'
 
 
+class AMT_HiddenMeshClothingItem(bpy.types.PropertyGroup):
+    object: bpy.props.PointerProperty(
+        type=bpy.types.Object,
+        name="服メッシュ",
+        description="体を覆っている服メッシュを指定してください",
+        poll=_mesh_object_poll,
+    )
+
+
 class AMT_HiddenMeshProperties(bpy.types.PropertyGroup):
     body_object: bpy.props.PointerProperty(
         type=bpy.types.Object,
@@ -12,13 +21,15 @@ class AMT_HiddenMeshProperties(bpy.types.PropertyGroup):
         description="服の下に隠れている部分を検出したいアバターの体メッシュを指定してください",
         poll=_mesh_object_poll,
     )
-    clothing_collection: bpy.props.PointerProperty(
-        type=bpy.types.Collection,
-        name="服コレクション",
-        description=(
-            "体を覆っている服メッシュをまとめたコレクションを指定してください。"
-            "コレクション内(サブコレクション含む)の全メッシュオブジェクトが遮蔽物として扱われます"
-        ),
+    clothing_objects: bpy.props.CollectionProperty(
+        type=AMT_HiddenMeshClothingItem,
+        name="服メッシュ",
+        description="遮蔽物として扱う服メッシュの一覧です",
+    )
+    clothing_objects_index: bpy.props.IntProperty(
+        name="選択中の服メッシュ",
+        default=0,
+        min=0,
     )
     ray_samples: bpy.props.IntProperty(
         name="サンプル数",
@@ -43,6 +54,17 @@ class AMT_HiddenMeshProperties(bpy.types.PropertyGroup):
              "面を構成する頂点のいずれかが隠れていれば削除対象にします。より積極的に削除しますが境界付近に穴が開くことがあります"),
         ],
         default='ALL',
+    )
+    safety_margin: bpy.props.EnumProperty(
+        name="安全余白",
+        description="隠れ面の境界から削除対象を何段階内側へ縮めるかを指定します。大きいほど動いたときに破綻しにくくなります",
+        items=[
+            ('NONE', "なし", "検出した隠れ面をそのまま選択します"),
+            ('SMALL', "小(1段階)", "境界に接する面を1段階、削除対象から除外します"),
+            ('MEDIUM', "中(2段階)", "境界に接する面を2段階、削除対象から除外します(推奨)"),
+            ('LARGE', "大(3段階)", "境界に接する面を3段階、削除対象から除外します"),
+        ],
+        default='MEDIUM',
     )
     include_body_self_occlusion: bpy.props.BoolProperty(
         name="自身のメッシュも遮蔽物に含める",
@@ -71,7 +93,7 @@ class AMT_HiddenMeshProperties(bpy.types.PropertyGroup):
     )
 
 
-_classes = (AMT_HiddenMeshProperties,)
+_classes = (AMT_HiddenMeshClothingItem, AMT_HiddenMeshProperties)
 
 
 def register():

@@ -46,8 +46,10 @@ if (Test-Path $staleCopy) {
         Remove-Item $staleCopy -Force -Recurse -Confirm:$false
         Write-Output "既存のリンクを削除しました: $staleCopy"
     } else {
-        Remove-Item $staleCopy -Recurse -Force -Confirm:$false
-        Write-Output "既存の実体コピーを削除しました: $staleCopy"
+        $backupSuffix = Get-Date -Format "yyyyMMdd-HHmmss"
+        $backupPath = "$staleCopy.backup-$backupSuffix"
+        Move-Item -LiteralPath $staleCopy -Destination $backupPath
+        Write-Warning "既存の実体コピーをバックアップしました: $backupPath"
     }
 }
 

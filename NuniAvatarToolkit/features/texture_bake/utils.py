@@ -21,36 +21,39 @@ def duplicate_source_for_bake(context, source_obj, material_slot_index, name="AM
     original_material = source_obj.material_slots[material_slot_index].material
     if original_material is None or original_material.node_tree is None:
         raise ValueError("選択したマテリアルスロットにノードベースのマテリアルが設定されていません")
-
-    mesh_copy = source_obj.data.copy()
-    proxy_obj = bpy.data.objects.new(name, mesh_copy)
-    proxy_obj.matrix_world = source_obj.matrix_world.copy()
-    context.scene.collection.objects.link(proxy_obj)
-
-    bm = bmesh.new()
-    try:
-        bm.from_mesh(mesh_copy)
-        bm.faces.ensure_lookup_table()
-        faces_to_delete = [f for f in bm.faces if f.material_index != material_slot_index]
-        if len(faces_to_delete) == len(bm.faces):
-            raise ValueError("ベイク元メッシュに、指定したマテリアルスロットを使用している面がありません")
-        bmesh.ops.delete(bm, geom=faces_to_delete, context='FACES')
-        for f in bm.faces:
-            f.material_index = 0
-        bm.to_mesh(mesh_copy)
-    finally:
-        bm.free()
-
-    proxy_material = original_material.copy()
-    mesh_copy.materials.clear()
-    mesh_copy.materials.append(proxy_material)
-
-    active_uv = mesh_copy.uv_layers.active
-    if active_uv is None:
-        bpy.data.objects.remove(proxy_obj, do_unlink=True)
+    if not any(poly.material_index == material_slot_index for poly in source_obj.data.polygons):
+        raise ValueError("ベイク元メッシュに、指定したマテリアルスロットを使用している面がありません")
+    if source_obj.data.uv_layers.active is None:
         raise ValueError("ベイク元メッシュにUVマップがありません")
 
-    return proxy_obj, proxy_material, active_uv.name
+    mesh_copy = None
+    proxy_obj = None
+    proxy_material = None
+    try:
+        mesh_copy = source_obj.data.copy()
+        proxy_obj = bpy.data.objects.new(name, mesh_copy)
+        proxy_obj.matrix_world = source_obj.matrix_world.copy()
+        context.scene.collection.objects.link(proxy_obj)
+
+        bm = bmesh.new()
+        try:
+            bm.from_mesh(mesh_copy)
+            bm.faces.ensure_lookup_table()
+            faces_to_delete = [f for f in bm.faces if f.material_index != material_slot_index]
+            bmesh.ops.delete(bm, geom=faces_to_delete, context='FACES')
+            for f in bm.faces:
+                f.material_index = 0
+            bm.to_mesh(mesh_copy)
+        finally:
+            bm.free()
+
+        proxy_material = original_material.copy()
+        mesh_copy.materials.clear()
+        mesh_copy.materials.append(proxy_material)
+        return proxy_obj, proxy_material, mesh_copy.uv_layers.active.name
+    except Exception:
+        _remove_proxy_data(proxy_obj, mesh_copy, proxy_material)
+        raise
 
 
 def compute_uv_bbox(mesh, uv_layer_name):
@@ -173,14 +176,22 @@ def run_self_bake(context, proxy_obj, uv_layer_name, bake_type, margin_px, sampl
             proxy_obj.data.uv_layers.active = original_active_uv
 
 
-def cleanup_proxy(proxy_obj):
-    if proxy_obj is None:
-        return
+def _remove_proxy_data(proxy_obj, mesh=None, material=None):
+  if proxy_obj is not None:
     mesh = proxy_obj.data
     materials = list(mesh.materials)
+    if material is not None and material not in materials:
+      materials.append(material)
     bpy.data.objects.remove(proxy_obj, do_unlink=True)
-    if mesh.users == 0:
-        bpy.data.meshes.remove(mesh)
-    for mat in materials:
-        if mat is not None and mat.users == 0:
-            bpy.data.materials.remove(mat)
+  else:
+    materials = [material] if material is not None else []
+  if mesh is not None and mesh.users == 0:
+    bpy.data.meshes.remove(mesh)
+  for mat in materials:
+    if mat is not None and mat.users == 0:
+      bpy.data.materials.remove(mat)
+
+
+def cleanup_proxy(proxy_obj):
+  if proxy_obj is not None:
+    _remove_proxy_data(proxy_obj)

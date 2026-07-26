@@ -37,7 +37,7 @@ class OBJECT_OT_amt_relink_textures(bpy.types.Operator):
             lines.append(('INFO', f"{image.name}: '{new_path}' に再リンクしました"))
         for image, matches in result['ambiguous']:
             candidates_text = ", ".join(os.path.basename(m) for m in matches)
-            lines.append(('WARNING', f"{image.name}: 候補が複数あるためスキップしました({candidates_text})"))
+            lines.append(('WARNING', f"{image.name}: 完全一致ではない、または候補が複数あるためスキップしました({candidates_text})"))
         for image in result['not_found']:
             lines.append(('WARNING', f"{image.name}: 一致するファイルが見つかりませんでした"))
 

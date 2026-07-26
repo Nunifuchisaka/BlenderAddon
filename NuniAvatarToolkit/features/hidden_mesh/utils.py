@@ -9,6 +9,12 @@ from mathutils import Vector
 PERFORMANCE_WARNING_VERTEX_SAMPLES = 300_000
 RAY_MAX_DISTANCE_FACTOR = 10.0
 SELF_HIT_MAX_WALKS = 4
+SAFETY_MARGIN_RINGS = {
+    'NONE': 0,
+    'SMALL': 1,
+    'MEDIUM': 2,
+    'LARGE': 3,
+}
 
 # Hemisphere directions are clamped away from the equator (dot(dir, normal) >= DIRECTION_Z_MIN)
 # since near-tangent rays carry little visibility information and are the main source of
@@ -28,15 +34,6 @@ def generate_hemisphere_directions(sample_count):
         directions.append(Vector((math.cos(theta) * radius, math.sin(theta) * radius, z)))
     directions.sort(key=lambda v: -v.z)
     return tuple(directions)
-
-
-def get_clothing_objects(collection, exclude_obj):
-    if collection is None:
-        return []
-    return [
-        obj for obj in collection.all_objects
-        if obj.type == 'MESH' and obj is not exclude_obj and obj.data and len(obj.data.vertices) > 0
-    ]
 
 
 def get_protected_vertex_mask(body_obj, group_name):
@@ -158,3 +155,41 @@ def compute_hidden_face_mask(mesh, hidden_flags, mode):
         mask[f] = bool(hidden_flags[verts].all()) if mode == 'ALL' else bool(hidden_flags[verts].any())
 
     return mask
+
+
+def inset_hidden_face_mask(mesh, hidden_face_mask, safety_margin):
+    """Shrink hidden faces inward by shared-edge rings.
+
+    Each pass removes hidden faces touching a currently-visible face. This keeps
+    a configurable belt of body geometry beneath clothing boundaries so pose and
+    cloth deformation are less likely to expose holes.
+    """
+    rings = SAFETY_MARGIN_RINGS.get(safety_margin)
+    if rings is None:
+        raise ValueError(f"不明な安全余白です: {safety_margin}")
+
+    result = np.asarray(hidden_face_mask, dtype=bool).copy()
+    if rings == 0 or not result.any():
+        return result
+
+    edge_faces = {}
+    for face_index, polygon in enumerate(mesh.polygons):
+        for edge_key in polygon.edge_keys:
+            edge_faces.setdefault(tuple(sorted(edge_key)), []).append(face_index)
+
+    neighbors = [set() for _ in range(len(mesh.polygons))]
+    for face_indices in edge_faces.values():
+        for face_index in face_indices:
+            neighbors[face_index].update(other for other in face_indices if other != face_index)
+
+    for _ in range(rings):
+        boundary = [
+            face_index
+            for face_index, hidden in enumerate(result)
+            if hidden and any(not result[other] for other in neighbors[face_index])
+        ]
+        if not boundary:
+            break
+        result[boundary] = False
+
+    return result

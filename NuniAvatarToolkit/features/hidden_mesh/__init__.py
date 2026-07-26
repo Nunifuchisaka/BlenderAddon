@@ -1,4 +1,6 @@
-from . import properties, operators, panel
+from . import api, properties, operators, panel
+
+run = api.run
 
 _modules = (properties, operators, panel)
 

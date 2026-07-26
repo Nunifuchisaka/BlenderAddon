@@ -113,6 +113,8 @@ def relink_missing_textures(images, directory):
         level, matches = find_best_matches(image.name, candidates)
         if level is None:
             not_found.append(image)
+        elif level == LEVEL_PARTIAL:
+            ambiguous.append((image, matches))
         elif len(matches) == 1:
             new_path = matches[0]
             image.filepath = new_path

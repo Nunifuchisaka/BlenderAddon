@@ -12,6 +12,7 @@ bl_info = {
 
 from .core import report as core_report
 from .features import armature_align, cleanup, diagnostics, hidden_mesh, merge, texture_bake, texture_relink
+from .features.hidden_mesh.api import run as run_hidden_mesh
 
 # core_report must register first: feature modules declare CollectionProperty(type=AMT_ReportLine).
 _modules = (core_report, hidden_mesh, texture_bake, cleanup, merge, diagnostics, texture_relink, armature_align)
