@@ -214,10 +214,7 @@ class OBJECT_OT_amt_delete_hidden_faces(bpy.types.Operator):
             f"バックアップ「{result['backup_object']}」を作成しました"
         )
         if result['freed_uv_region_count']:
-            msg += (
-                f"({result['freed_uv_region_count']} 個のUV解放領域を記録し、"
-                "テクスチャベイク機能で再利用できます)"
-            )
+            msg += f"({result['freed_uv_region_count']} 個のUV解放領域を記録しました)"
         self.report({'INFO'}, msg)
         return {'FINISHED'}
 

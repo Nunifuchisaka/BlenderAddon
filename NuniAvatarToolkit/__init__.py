@@ -11,11 +11,13 @@ bl_info = {
 }
 
 from .core import report as core_report
-from .features import armature_align, bone_follow, cleanup, diagnostics, hidden_mesh, merge, texture_bake, texture_relink
+from .features import armature_align, bone_follow, cleanup, diagnostics, hidden_mesh, merge, texture_relink
 from .features.hidden_mesh.api import run as run_hidden_mesh
 
+# texture_bake は一時的に無効化中(後のバージョンで再開予定)。
+# 再開するときは features/texture_bake/ をそのまま使えるので、上の import と下の _modules へ texture_bake を戻す。
 # core_report must register first: feature modules declare CollectionProperty(type=AMT_ReportLine).
-_modules = (core_report, hidden_mesh, texture_bake, cleanup, merge, diagnostics, texture_relink, armature_align, bone_follow)
+_modules = (core_report, hidden_mesh, cleanup, merge, diagnostics, texture_relink, armature_align, bone_follow)
 
 
 def register():
