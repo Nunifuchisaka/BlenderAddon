@@ -27,6 +27,7 @@ class OBJECT_OT_amt_diagnostics_run(bpy.types.Operator):
             return {'CANCELLED'}
 
         lines = []
+        any_issue = False
 
         tris = utils.count_triangles(mesh_objs, depsgraph)
         lines.append(('INFO', f"ポリゴン数(三角形換算): {tris} 【目安: {utils.rank_for(tris, utils.TRIANGLE_THRESHOLDS)}】"))
@@ -38,13 +39,19 @@ class OBJECT_OT_amt_diagnostics_run(bpy.types.Operator):
         bone_rank = utils.rank_for(bones, utils.BONE_THRESHOLDS) if armature_objs else "N/A"
         lines.append(('INFO', f"ボーン数: {bones} 【目安: {bone_rank}】"))
 
+        if len(armature_objs) == 0:
+            any_issue = True
+            lines.append(('WARNING', "アーマチュアオブジェクトが見つかりません"))
+        elif len(armature_objs) >= 2:
+            any_issue = True
+            lines.append(('WARNING', f"アーマチュアオブジェクトが{len(armature_objs)}個あります(通常は1つを想定した機能です)"))
+
         shape_keys = utils.count_shape_keys(mesh_objs)
         lines.append(('INFO', f"シェイプキー数(Basis除く): {shape_keys}"))
 
         lines.append(('WARNING', "※上記の目安はVRChatの基準を参考にした概算値です。最新の正確な基準は公式ドキュメントで確認してください"))
         lines.append(('INFO', "--- 書き出し前チェック ---"))
 
-        any_issue = False
         for obj in mesh_objs:
             non_finite = utils.find_non_finite_vertices(obj)
             if non_finite > 0:
@@ -75,6 +82,33 @@ class OBJECT_OT_amt_diagnostics_run(bpy.types.Operator):
                     f"[{armature_obj.name}] どのメッシュからもウェイトが乗っていないボーン: {len(zero_weight)} 個 "
                     "(自動削除は行いません。PhysBone等の参照に注意して手動で確認してください)",
                 ))
+
+        layer_collection_root = context.view_layer.layer_collection
+
+        for obj in utils.find_uncategorized_mesh_objects(collection):
+            any_issue = True
+            lines.append((
+                'WARNING',
+                f"[{obj.name}] コレクション直下に直接配置されています(サブコレクションへの分類漏れの可能性があります)",
+            ))
+
+        for path, branch, reason in utils.find_excluded_or_hidden_branches(collection, layer_collection_root):
+            any_issue = True
+            lines.append((
+                'WARNING',
+                f"[{path}] {reason}のコレクションですが、中に{len(branch.all_objects)}個のオブジェクトがあります"
+                "(書き出し対象から漏れる、または意図せず含まれる可能性があります)",
+            ))
+
+        for obj, paths in utils.find_duplicate_membership(collection).items():
+            any_issue = True
+            lines.append(('WARNING', f"[{obj.name}] 複数のコレクションに重複して所属しています: {', '.join(paths)}"))
+
+        for path, _child in utils.find_default_named_collections(collection):
+            lines.append(('INFO', f"[{path}] コレクション名が初期値のままです(分類名の付け忘れの可能性があります)"))
+
+        for path, _child in utils.find_empty_collections(collection):
+            lines.append(('INFO', f"[{path}] 空のコレクションです(中身がありません)"))
 
         if not any_issue:
             lines.append(('INFO', "重大な問題は検出されませんでした"))
