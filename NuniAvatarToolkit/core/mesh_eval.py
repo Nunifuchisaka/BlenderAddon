@@ -154,3 +154,30 @@ def compute_bbox_diagonal(positions):
     mx = positions.max(axis=0)
     diag = float(np.linalg.norm(mx - mn))
     return diag if diag > 1e-9 else 1.0
+
+
+def compute_face_mask_from_vertex_flags(mesh, vertex_flags, mode):
+    """Lift a per-vertex boolean mask to a per-face one.
+
+    mode 'ALL' flags a face only when every one of its vertices is flagged;
+    'ANY' flags it as soon as a single vertex is.
+    """
+    face_count = len(mesh.polygons)
+    mask = np.zeros(face_count, dtype=bool)
+    if face_count == 0:
+        return mask
+
+    loop_totals = np.empty(face_count, dtype=np.int32)
+    mesh.polygons.foreach_get('loop_total', loop_totals)
+    loop_starts = np.empty(face_count, dtype=np.int32)
+    mesh.polygons.foreach_get('loop_start', loop_starts)
+    vertex_indices = np.empty(len(mesh.loops), dtype=np.int32)
+    mesh.loops.foreach_get('vertex_index', vertex_indices)
+
+    for f in range(face_count):
+        start = loop_starts[f]
+        total = loop_totals[f]
+        verts = vertex_indices[start:start + total]
+        mask[f] = bool(vertex_flags[verts].all()) if mode == 'ALL' else bool(vertex_flags[verts].any())
+
+    return mask

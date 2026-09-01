@@ -135,28 +135,6 @@ def iter_hidden_vertex_flags(positions, normals, flags, clothing_bvh, clothing_b
         yield
 
 
-def compute_hidden_face_mask(mesh, hidden_flags, mode):
-    face_count = len(mesh.polygons)
-    mask = np.zeros(face_count, dtype=bool)
-    if face_count == 0:
-        return mask
-
-    loop_totals = np.empty(face_count, dtype=np.int32)
-    mesh.polygons.foreach_get('loop_total', loop_totals)
-    loop_starts = np.empty(face_count, dtype=np.int32)
-    mesh.polygons.foreach_get('loop_start', loop_starts)
-    vertex_indices = np.empty(len(mesh.loops), dtype=np.int32)
-    mesh.loops.foreach_get('vertex_index', vertex_indices)
-
-    for f in range(face_count):
-        start = loop_starts[f]
-        total = loop_totals[f]
-        verts = vertex_indices[start:start + total]
-        mask[f] = bool(hidden_flags[verts].all()) if mode == 'ALL' else bool(hidden_flags[verts].any())
-
-    return mask
-
-
 def inset_hidden_face_mask(mesh, hidden_face_mask, safety_margin):
     """Shrink hidden faces inward by shared-edge rings.
 

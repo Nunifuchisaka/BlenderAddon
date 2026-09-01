@@ -12,7 +12,7 @@ import bpy
 import numpy as np
 
 from ...core import mesh_eval, uv_regions
-from ...core.context_utils import reset_to_object_mode_with_active
+from ...core.context_utils import reset_to_object_mode_with_active, select_faces_in_edit_mode
 from . import utils
 
 
@@ -157,7 +157,7 @@ class AnalysisSession:
 
   def finish(self):
     mesh = self.body_object.data
-    raw_mask = utils.compute_hidden_face_mask(mesh, self._flags, self._face_select_mode)
+    raw_mask = mesh_eval.compute_face_mask_from_vertex_flags(mesh, self._flags, self._face_select_mode)
     final_mask = utils.inset_hidden_face_mask(mesh, raw_mask, self._safety_margin)
     return HiddenMeshAnalysis(
       body_name=self.body_object.name,
@@ -171,18 +171,7 @@ class AnalysisSession:
 
 def select_faces(context, body_object, face_indices):
   """Replace the current edit-mode selection with the specified body faces."""
-  face_indices = frozenset(int(index) for index in face_indices)
-  reset_to_object_mode_with_active(context, body_object)
-  bpy.ops.object.mode_set(mode='EDIT')
-  context.tool_settings.mesh_select_mode = (False, False, True)
-  bpy.ops.mesh.select_all(action='DESELECT')
-
-  bm = bmesh.from_edit_mesh(body_object.data)
-  bm.faces.ensure_lookup_table()
-  for face_index in face_indices:
-    if 0 <= face_index < len(bm.faces):
-      bm.faces[face_index].select = True
-  bmesh.update_edit_mesh(body_object.data)
+  select_faces_in_edit_mode(context, body_object, face_indices)
 
 
 def create_body_backup(context, body_object):
