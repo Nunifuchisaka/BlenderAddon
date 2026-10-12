@@ -1,10 +1,10 @@
 bl_info = {
     "name": "NuniAvatarToolkit",
     "author": "Nunifuchisaka",
-    "version": (1, 5, 0),
+    "version": (1, 0, 0),
     "blender": (3, 6, 0),
     "location": "3Dビューポート > サイドバー(Nキー) > Avatar Toolkit",
-    "description": "VRChat/VRMアバター向けの制作支援ツール集(メッシュ最適化・統合用ボーンウェイト・アーマチュア位置合わせ・診断)",
+    "description": "VRChat/VRMアバター向けの制作支援ツール集(隠れメッシュ削除・服フィット・貫通チェック・統合・診断など)",
     "category": "Mesh",
     "doc_url": "",
     "tracker_url": "",
