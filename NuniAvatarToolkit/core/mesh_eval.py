@@ -7,31 +7,49 @@ it is imported by feature modules, not registered itself.
 import numpy as np
 from mathutils.bvhtree import BVHTree
 
-# Modifier types that are guaranteed to preserve vertex count/order (Blender's
-# own "Deform" modifier category). Anything else is disabled transiently when
-# posed-but-topology-stable coordinates are needed, since generative modifiers
-# (Subdivision, Mirror, Boolean, geometry nodes, ...) change vertex count and
-# break the 1:1 correspondence with the base mesh required for edit-mode selection.
+# Modifier types that keep the base mesh's vertex count and order: Blender's own "Deform"
+# category plus caches, physics and data-only modifiers that never add, remove or reorder
+# vertices. Anything else (Subdivision, Mirror, Boolean, Geometry Nodes, ...) may change the
+# count or silently reorder vertices, so it is disabled transiently whenever coordinates must
+# stay 1:1 with the base mesh (required for edit-mode selection). Unknown identifiers are
+# harmless here because membership is a plain string test.
 DEFORM_MODIFIER_TYPES = frozenset({
     'ARMATURE', 'CAST', 'CURVE', 'DISPLACE', 'HOOK', 'LAPLACIANDEFORM',
     'LATTICE', 'MESH_DEFORM', 'SHRINKWRAP', 'SIMPLE_DEFORM', 'SMOOTH',
     'CORRECTIVE_SMOOTH', 'LAPLACIANSMOOTH', 'SURFACE_DEFORM', 'WARP', 'WAVE',
+    'MESH_CACHE', 'MESH_SEQUENCE_CACHE', 'CLOTH', 'SOFT_BODY', 'COLLISION', 'DYNAMIC_PAINT',
+    'DATA_TRANSFER', 'NORMAL_EDIT', 'WEIGHTED_NORMAL', 'UV_PROJECT', 'UV_WARP',
+    'VERTEX_WEIGHT_EDIT', 'VERTEX_WEIGHT_MIX', 'VERTEX_WEIGHT_PROXIMITY',
 })
 
 
+def _non_deform_modifiers(obj):
+    return [mod for mod in obj.modifiers if mod.type not in DEFORM_MODIFIER_TYPES and mod.show_viewport]
+
+
 def disable_non_deform_modifiers(obj):
-    """Temporarily hide non-deform modifiers. Returns [(modifier, prev_state), ...]."""
+    """Temporarily hide non-deform modifiers. Returns [(modifier, prev_state), ...].
+
+    If hiding one fails (e.g. the object is linked), the ones already hidden are restored
+    before the exception propagates, so the object is never left half-modified.
+    """
     disabled = []
-    for mod in obj.modifiers:
-        if mod.type not in DEFORM_MODIFIER_TYPES and mod.show_viewport:
-            disabled.append((mod, True))
+    try:
+        for mod in _non_deform_modifiers(obj):
             mod.show_viewport = False
+            disabled.append((mod, True))
+    except Exception:
+        restore_modifiers(disabled)
+        raise
     return disabled
 
 
 def restore_modifiers(disabled):
     for mod, prev_state in disabled:
-        mod.show_viewport = prev_state
+        try:
+            mod.show_viewport = prev_state
+        except Exception:
+            pass
 
 
 def transform_points(points, matrix):
@@ -92,28 +110,33 @@ def _get_matching_evaluated(obj, depsgraph, original_count):
 def snapshot_deform_only(depsgraph, obj):
     """World-space (position, normal) per base-mesh vertex, index-aligned with obj.data.vertices.
 
-    Tries the fully evaluated (posed) mesh first; if generative modifiers changed
-    the vertex count, retries with those modifiers transiently disabled; falls back
-    to rest-pose coordinates only if the mismatch persists even then.
+    With only count/order-preserving modifiers enabled, the evaluated (posed) mesh is used
+    directly. Otherwise those other modifiers are transiently disabled first, because an equal
+    vertex count alone does not prove the order matches (Geometry Nodes can reorder). Falls back
+    to rest-pose base coordinates when the modifiers cannot be toggled (linked object) or the
+    count still differs.
     Returns (positions: (V,3) float64 ndarray, normals: (V,3) float64 ndarray, used_evaluated: bool).
     """
     original_count = len(obj.data.vertices)
 
-    result = _get_matching_evaluated(obj, depsgraph, original_count)
-    if result is not None:
-        return result[0], result[1], True
-
-    disabled = disable_non_deform_modifiers(obj)
-    try:
-        if disabled:
-            depsgraph.update()
-            result = _get_matching_evaluated(obj, depsgraph, original_count)
-            if result is not None:
-                return result[0], result[1], True
-    finally:
-        if disabled:
-            restore_modifiers(disabled)
-            depsgraph.update()
+    if not _non_deform_modifiers(obj):
+        result = _get_matching_evaluated(obj, depsgraph, original_count)
+        if result is not None:
+            return result[0], result[1], True
+    elif obj.library is None:
+        try:
+            disabled = disable_non_deform_modifiers(obj)
+        except Exception:
+            disabled = None
+        if disabled is not None:
+            try:
+                depsgraph.update()
+                result = _get_matching_evaluated(obj, depsgraph, original_count)
+                if result is not None:
+                    return result[0], result[1], True
+            finally:
+                restore_modifiers(disabled)
+                depsgraph.update()
 
     positions, normals = extract_world_positions_normals(obj.data, obj.matrix_world)
     return positions, normals, False
