@@ -53,6 +53,15 @@ def make_active(obj):
   obj.select_set(True)
 
 
+def assert_cancelled(operator, *args):
+  # An operator that reports ERROR makes bpy.ops raise RuntimeError instead of returning CANCELLED.
+  try:
+    result = operator(*args)
+  except RuntimeError:
+    return
+  assert result == {'CANCELLED'}, result
+
+
 def set_cleanup_flags(props, **flags):
   for name in (
     'remove_empty_vertex_groups', 'remove_noop_shape_keys', 'remove_unused_uv_maps',
@@ -145,6 +154,23 @@ def test_bone_follow_from_edit_mode():
     assert abs(weight - 1.0) < 1e-6
 
 
+def test_bone_follow_cancel_keeps_edit_mode():
+  reset_scene()
+  bpy.ops.object.armature_add()
+  armature = bpy.context.active_object
+  bpy.ops.mesh.primitive_cube_add(location=(2.0, 0.0, 0.0))
+  target = bpy.context.active_object
+  bpy.ops.object.mode_set(mode='EDIT')
+
+  props = bpy.context.scene.amt_bone_follow
+  props.target_object = target
+  props.armature_object = armature
+  props.bone_name = "Missing"
+  assert_cancelled(bpy.ops.object.amt_assign_rigid_bone_weight)
+  assert target.mode == 'EDIT'
+  assert not any(m.type == 'ARMATURE' for m in target.modifiers)
+
+
 def _fit_coordinates(obj, name):
   return [tuple(round(c, 6) for c in d.co) for d in obj.data.shape_keys.key_blocks[name].data]
 
@@ -181,6 +207,62 @@ def test_cloth_fit_rerun_keeps_key_settings():
   assert _fit_coordinates(cloth, "AMT_Fit") == first
 
 
+def _setup_cloth_fit(shape_key_name="AMT_Fit"):
+  reset_scene()
+  body = make_sphere("Body", 1.0)
+  cloth = make_sphere("Cloth", 0.97, location=(0.05, 0.0, 0.0), segments=32, rings=16)
+  group = cloth.vertex_groups.new(name="Fit")
+  group.add([v.index for v in cloth.data.vertices if v.co.z > -0.3], 0.8, 'REPLACE')
+  bpy.context.view_layer.update()
+  props = bpy.context.scene.amt_cloth_fit
+  props.body_object = body
+  props.clothing_object = cloth
+  props.vertex_group = "Fit"
+  props.shape_key_name = shape_key_name
+  return cloth
+
+
+def test_cloth_fit_rejects_basis_name_without_shape_keys():
+  cloth = _setup_cloth_fit("Basis")
+  try:
+    assert_cancelled(bpy.ops.object.amt_cloth_fit, 'EXEC_DEFAULT')
+  finally:
+    bpy.context.scene.amt_cloth_fit.shape_key_name = "AMT_Fit"
+  assert cloth.data.shape_keys is None
+
+
+def _evaluated_coordinates(obj):
+  depsgraph = bpy.context.evaluated_depsgraph_get()
+  evaluated = obj.evaluated_get(depsgraph)
+  mesh = evaluated.to_mesh()
+  try:
+    return [tuple(v.co) for v in mesh.vertices]
+  finally:
+    evaluated.to_mesh_clear()
+
+
+def test_cloth_fit_reused_key_relative_to_other_key():
+  cloth = _setup_cloth_fit()
+  assert bpy.ops.object.amt_cloth_fit('EXEC_DEFAULT') == {'FINISHED'}
+  bpy.context.view_layer.update()
+  expected = _evaluated_coordinates(cloth)
+
+  parent = cloth.shape_key_add(name="Parent", from_mix=False)
+  for point in parent.data:
+    point.co.x += 0.3
+  parent.value = 0.0
+  key_blocks = cloth.data.shape_keys.key_blocks
+  key_blocks["AMT_Fit"].relative_key = parent
+
+  assert bpy.ops.object.amt_cloth_fit('EXEC_DEFAULT') == {'FINISHED'}
+  key_blocks = cloth.data.shape_keys.key_blocks
+  assert key_blocks["AMT_Fit"].relative_key == key_blocks["Parent"]
+  bpy.context.view_layer.update()
+  actual = _evaluated_coordinates(cloth)
+  worst = max(max(abs(a - b) for a, b in zip(p, q)) for p, q in zip(actual, expected))
+  assert worst < 1e-5, worst
+
+
 def test_hidden_mesh_analyze_restores_context():
   reset_scene()
   body = make_sphere("Body", 1.0)
@@ -201,13 +283,23 @@ def test_hidden_mesh_analyze_restores_context():
   assert bpy.context.view_layer.objects.active == clothing
   assert clothing.select_get() and not body.select_get()
 
+  for obj in bpy.context.selected_objects:
+    obj.select_set(False)
+  bpy.context.view_layer.objects.active = None
+  NuniAvatarToolkit.run_hidden_mesh(body, [clothing], action='ANALYZE', ray_samples=8)
+  assert bpy.context.view_layer.objects.active is None
+  assert not bpy.context.selected_objects
+
 
 TESTS = (
   test_cleanup_with_regular_modifiers,
   test_noop_shape_keys_respect_relative_key,
   test_cleanup_removes_loose_geometry,
   test_bone_follow_from_edit_mode,
+  test_bone_follow_cancel_keeps_edit_mode,
   test_cloth_fit_rerun_keeps_key_settings,
+  test_cloth_fit_rejects_basis_name_without_shape_keys,
+  test_cloth_fit_reused_key_relative_to_other_key,
   test_hidden_mesh_analyze_restores_context,
 )
 
