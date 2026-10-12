@@ -53,13 +53,15 @@ def make_active(obj):
   obj.select_set(True)
 
 
-def assert_cancelled(operator, *args):
-  # An operator that reports ERROR makes bpy.ops raise RuntimeError instead of returning CANCELLED.
+def assert_cancelled(expected_message, operator, *args):
+  # An operator that reports ERROR makes bpy.ops raise RuntimeError instead of returning CANCELLED,
+  # so the message is checked to tell an intended rejection from an unhandled exception.
   try:
     result = operator(*args)
-  except RuntimeError:
+  except RuntimeError as exc:
+    assert expected_message in str(exc) and "Traceback" not in str(exc), str(exc)
     return
-  assert result == {'CANCELLED'}, result
+  raise AssertionError(f"expected cancellation, got {result}")
 
 
 def set_cleanup_flags(props, **flags):
@@ -166,7 +168,28 @@ def test_bone_follow_cancel_keeps_edit_mode():
   props.target_object = target
   props.armature_object = armature
   props.bone_name = "Missing"
-  assert_cancelled(bpy.ops.object.amt_assign_rigid_bone_weight)
+  assert_cancelled("見つかりません", bpy.ops.object.amt_assign_rigid_bone_weight)
+  assert target.mode == 'EDIT'
+  assert not any(m.type == 'ARMATURE' for m in target.modifiers)
+
+  bpy.ops.object.mode_set(mode='OBJECT')
+  bpy.ops.object.armature_add(location=(4.0, 0.0, 0.0))
+  other_armature = bpy.context.active_object
+  target.modifiers.new("OtherArmature", 'ARMATURE').object = other_armature
+  make_active(target)
+  bpy.ops.object.mode_set(mode='EDIT')
+  props.bone_name = armature.data.bones[0].name
+  assert_cancelled("別のArmature", bpy.ops.object.amt_assign_rigid_bone_weight)
+  assert target.mode == 'EDIT'
+  assert bpy.context.view_layer.objects.active == target
+
+  bpy.ops.object.mode_set(mode='OBJECT')
+  target.modifiers.clear()
+  make_active(target)
+  bpy.ops.object.mode_set(mode='EDIT')
+  bpy.ops.mesh.select_all(action='SELECT')
+  bpy.ops.mesh.delete(type='VERT')
+  assert_cancelled("頂点がありません", bpy.ops.object.amt_assign_rigid_bone_weight)
   assert target.mode == 'EDIT'
   assert not any(m.type == 'ARMATURE' for m in target.modifiers)
 
@@ -225,7 +248,7 @@ def _setup_cloth_fit(shape_key_name="AMT_Fit"):
 def test_cloth_fit_rejects_basis_name_without_shape_keys():
   cloth = _setup_cloth_fit("Basis")
   try:
-    assert_cancelled(bpy.ops.object.amt_cloth_fit, 'EXEC_DEFAULT')
+    assert_cancelled("ベースのシェイプキー", bpy.ops.object.amt_cloth_fit, 'EXEC_DEFAULT')
   finally:
     bpy.context.scene.amt_cloth_fit.shape_key_name = "AMT_Fit"
   assert cloth.data.shape_keys is None
@@ -261,6 +284,21 @@ def test_cloth_fit_reused_key_relative_to_other_key():
   actual = _evaluated_coordinates(cloth)
   worst = max(max(abs(a - b) for a, b in zip(p, q)) for p, q in zip(actual, expected))
   assert worst < 1e-5, worst
+
+
+def test_cloth_fit_absolute_keys_ignore_relative_key():
+  cloth = _setup_cloth_fit()
+  assert bpy.ops.object.amt_cloth_fit('EXEC_DEFAULT') == {'FINISHED'}
+  first = _fit_coordinates(cloth, "AMT_Fit")
+
+  parent = cloth.shape_key_add(name="Parent", from_mix=False)
+  for point in parent.data:
+    point.co.x += 0.3
+  cloth.data.shape_keys.key_blocks["AMT_Fit"].relative_key = parent
+  cloth.data.shape_keys.use_relative = False
+
+  assert bpy.ops.object.amt_cloth_fit('EXEC_DEFAULT') == {'FINISHED'}
+  assert _fit_coordinates(cloth, "AMT_Fit") == first
 
 
 def test_hidden_mesh_analyze_restores_context():
@@ -300,6 +338,7 @@ TESTS = (
   test_cloth_fit_rerun_keeps_key_settings,
   test_cloth_fit_rejects_basis_name_without_shape_keys,
   test_cloth_fit_reused_key_relative_to_other_key,
+  test_cloth_fit_absolute_keys_ignore_relative_key,
   test_hidden_mesh_analyze_restores_context,
 )
 
