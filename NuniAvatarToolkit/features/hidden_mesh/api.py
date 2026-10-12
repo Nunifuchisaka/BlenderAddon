@@ -12,7 +12,9 @@ import bpy
 import numpy as np
 
 from ...core import mesh_eval, uv_regions
-from ...core.context_utils import reset_to_object_mode_with_active, select_faces_in_edit_mode
+from ...core.context_utils import (
+    capture_selection_state, reset_to_object_mode_with_active, restore_selection_state, select_faces_in_edit_mode,
+)
 from . import utils
 
 
@@ -234,32 +236,6 @@ def _resolve_mesh_object(value, label):
     return value
 
 
-def _capture_selection_state(context):
-    active = context.view_layer.objects.active
-    return {
-        'active': active,
-        'selected': list(context.selected_objects),
-        'mode': active.mode if active is not None else 'OBJECT',
-    }
-
-
-def _restore_selection_state(context, state):
-    if context.mode != 'OBJECT':
-        bpy.ops.object.mode_set(mode='OBJECT')
-    for obj in context.selected_objects:
-        obj.select_set(False)
-    for obj in state['selected']:
-        if obj.name in context.view_layer.objects:
-            obj.select_set(True)
-    active = state['active']
-    if active is None or active.name not in context.view_layer.objects:
-        context.view_layer.objects.active = None
-        return
-    context.view_layer.objects.active = active
-    if state['mode'] != 'OBJECT':
-        bpy.ops.object.mode_set(mode=state['mode'])
-
-
 def run(
     body,
     clothing=(),
@@ -292,7 +268,7 @@ def run(
         raise HiddenMeshError(f"不明なactionです: {action}")
 
     # ANALYZE is read-only, so it hands the user's active object, selection and mode back.
-    previous_state = _capture_selection_state(context) if normalized_action == 'ANALYZE' else None
+    previous_state = capture_selection_state(context) if normalized_action == 'ANALYZE' else None
     try:
         session = AnalysisSession(
             context,
@@ -311,7 +287,7 @@ def run(
         analysis = session.finish()
     finally:
         if previous_state is not None:
-            _restore_selection_state(context, previous_state)
+            restore_selection_state(context, previous_state)
     result = analysis.to_dict()
     result['action'] = normalized_action
 

@@ -14,6 +14,33 @@ def reset_to_object_mode_with_active(context, obj):
     obj.select_set(True)
 
 
+def capture_selection_state(context):
+    """Remember the active object, selection and its mode so restore_selection_state() can put them back."""
+    active = context.view_layer.objects.active
+    return {
+        'active': active,
+        'selected': list(context.selected_objects),
+        'mode': active.mode if active is not None else 'OBJECT',
+    }
+
+
+def restore_selection_state(context, state):
+    if context.mode != 'OBJECT':
+        bpy.ops.object.mode_set(mode='OBJECT')
+    for obj in context.selected_objects:
+        obj.select_set(False)
+    for obj in state['selected']:
+        if obj.name in context.view_layer.objects:
+            obj.select_set(True)
+    active = state['active']
+    if active is None or active.name not in context.view_layer.objects:
+        context.view_layer.objects.active = None
+        return
+    context.view_layer.objects.active = active
+    if state['mode'] != 'OBJECT':
+        bpy.ops.object.mode_set(mode=state['mode'])
+
+
 def select_faces_in_edit_mode(context, obj, face_indices):
     """Replace the current edit-mode selection with the specified faces of obj."""
     face_indices = frozenset(int(index) for index in face_indices)

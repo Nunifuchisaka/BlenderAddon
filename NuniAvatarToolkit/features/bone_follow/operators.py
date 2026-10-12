@@ -1,6 +1,6 @@
 import bpy
 
-from ...core.context_utils import reset_to_object_mode_with_active
+from ...core.context_utils import capture_selection_state, reset_to_object_mode_with_active, restore_selection_state
 from ...core.report import set_report_lines
 from . import utils
 
@@ -29,7 +29,9 @@ class OBJECT_OT_amt_assign_rigid_bone_weight(bpy.types.Operator):
             return {'CANCELLED'}
 
         # VertexGroup.add() fails in Edit Mode, so leave it before touching any data.
+        previous_state = None
         if target_object.mode != 'OBJECT' or context.mode != 'OBJECT':
+            previous_state = capture_selection_state(context)
             reset_to_object_mode_with_active(context, target_object)
 
         try:
@@ -39,6 +41,9 @@ class OBJECT_OT_amt_assign_rigid_bone_weight(bpy.types.Operator):
                 props.bone_name,
             )
         except ValueError as exc:
+            # Checks that need synced mesh data (e.g. vertices removed in Edit Mode) land here.
+            if previous_state is not None:
+                restore_selection_state(context, previous_state)
             self.report({'ERROR'}, str(exc))
             return {'CANCELLED'}
 

@@ -1,6 +1,23 @@
 """Helpers for preparing a mesh for rigid bone weighting before it is joined."""
 
 
+_CONFLICTING_MODIFIER_MESSAGE = (
+    "対象メッシュに別のArmatureモディファイアが設定されています。"
+    "結合先と同じArmatureへ変更してから実行してください"
+)
+
+
+def _has_conflicting_armature_modifier(target_object, armature_object):
+    """True when only Armature modifiers bound to a different armature exist (nothing reusable)."""
+    armature_modifiers = [
+        modifier for modifier in getattr(target_object, 'modifiers', ())
+        if modifier.type == 'ARMATURE'
+    ]
+    if any(modifier.object == armature_object or modifier.object is None for modifier in armature_modifiers):
+        return False
+    return bool(armature_modifiers)
+
+
 def validate_weight_setup(target_object, armature_object, bone_name, allow_edit_mode=False):
     if target_object is None:
         raise ValueError("対象メッシュを指定してください")
@@ -20,6 +37,8 @@ def validate_weight_setup(target_object, armature_object, bone_name, allow_edit_
         raise ValueError(
             "対象メッシュはBone Parentされています。二重追従を防ぐため、先に親子関係を解除してください"
         )
+    if _has_conflicting_armature_modifier(target_object, armature_object):
+        raise ValueError(_CONFLICTING_MODIFIER_MESSAGE)
     if not allow_edit_mode and getattr(target_object, 'mode', 'OBJECT') == 'EDIT':
         raise ValueError("対象メッシュが編集モードのため、オブジェクトモードに戻してから実行してください")
     if len(target_object.data.vertices) == 0:
@@ -46,10 +65,7 @@ def _find_or_create_armature_modifier(target_object, armature_object):
         (modifier for modifier in armature_modifiers if modifier.object is not None), None,
     )
     if conflicting_modifier is not None:
-        raise ValueError(
-            "対象メッシュに別のArmatureモディファイアが設定されています。"
-            "結合先と同じArmatureへ変更してから実行してください"
-        )
+        raise ValueError(_CONFLICTING_MODIFIER_MESSAGE)
 
     modifier = target_object.modifiers.new("Armature", 'ARMATURE')
     modifier.object = armature_object
