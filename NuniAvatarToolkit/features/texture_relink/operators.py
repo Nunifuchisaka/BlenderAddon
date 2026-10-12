@@ -40,12 +40,17 @@ class OBJECT_OT_amt_relink_textures(bpy.types.Operator):
             lines.append(('WARNING', f"{image.name}: 完全一致ではない、または候補が複数あるためスキップしました({candidates_text})"))
         for image in result['not_found']:
             lines.append(('WARNING', f"{image.name}: 一致するファイルが見つかりませんでした"))
+        for image in result['linked']:
+            lines.append(('WARNING', f"{image.name}: リンクされた画像のため変更できません(リンク元のファイルで再リンクしてください)"))
+        for image, error in result['failed']:
+            lines.append(('ERROR', f"{image.name}: 再リンクに失敗したため元のパスに戻しました({error})"))
 
         set_report_lines(props.report_lines, lines)
         self.report(
             {'INFO'},
             f"再リンク {len(result['relinked'])} 件、保留 {len(result['ambiguous'])} 件、"
-            f"見つからず {len(result['not_found'])} 件",
+            f"見つからず {len(result['not_found'])} 件、変更不可 {len(result['linked'])} 件、"
+            f"失敗 {len(result['failed'])} 件",
         )
         return {'FINISHED'}
 

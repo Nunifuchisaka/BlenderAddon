@@ -8,7 +8,10 @@ import re
 
 import bpy
 
-IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.tga', '.bmp', '.tiff', '.tif', '.exr', '.hdr'}
+IMAGE_EXTENSIONS = {
+    '.png', '.jpg', '.jpeg', '.tga', '.bmp', '.tiff', '.tif', '.exr', '.hdr',
+    '.webp', '.jp2', '.j2c', '.dpx', '.cin', '.sgi', '.rgb', '.bw',
+}
 
 _DUPLICATE_SUFFIX_RE = re.compile(r'\.\d{3}$')
 
@@ -28,7 +31,8 @@ def collect_missing_images(images):
             continue
         if not image.filepath:
             continue
-        if not os.path.exists(bpy.path.abspath(image.filepath)):
+        # A linked image's "//" path is relative to its library .blend, not the current file.
+        if not os.path.exists(bpy.path.abspath(image.filepath, library=image.library)):
             missing.append(image)
     return missing
 
@@ -108,8 +112,13 @@ def relink_missing_textures(images, directory):
     relinked = []
     ambiguous = []
     not_found = []
+    linked = []
+    failed = []
 
     for image in collect_missing_images(images):
+        if image.library is not None:
+            linked.append(image)
+            continue
         level, matches = find_best_matches(image.name, candidates)
         if level is None:
             not_found.append(image)
@@ -117,10 +126,23 @@ def relink_missing_textures(images, directory):
             ambiguous.append((image, matches))
         elif len(matches) == 1:
             new_path = matches[0]
-            image.filepath = new_path
-            image.reload()
+            old_path = image.filepath
+            # One image failing must not abort the batch or leave it half-changed.
+            try:
+                image.filepath = new_path
+                image.reload()
+            except Exception as exc:
+                try:
+                    image.filepath = old_path
+                except Exception:
+                    pass
+                failed.append((image, str(exc)))
+                continue
             relinked.append((image, new_path))
         else:
             ambiguous.append((image, matches))
 
-    return {'relinked': relinked, 'ambiguous': ambiguous, 'not_found': not_found}
+    return {
+        'relinked': relinked, 'ambiguous': ambiguous, 'not_found': not_found,
+        'linked': linked, 'failed': failed,
+    }
