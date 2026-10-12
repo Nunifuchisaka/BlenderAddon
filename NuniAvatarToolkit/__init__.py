@@ -2,7 +2,7 @@ bl_info = {
     "name": "NuniAvatarToolkit",
     "author": "Nunifuchisaka",
     "version": (1, 0, 0),
-    "blender": (3, 6, 0),
+    "blender": (4, 2, 0),
     "location": "3Dビューポート > サイドバー(Nキー) > Avatar Toolkit",
     "description": "VRChat/VRMアバター向けの制作支援ツール集(隠れメッシュ削除・服フィット・貫通チェック・統合・診断など)",
     "category": "Mesh",
