@@ -14,13 +14,17 @@ def _find_shape_key(obj, name):
     return shape_keys.key_blocks.get(name)
 
 
-def _create_shape_key(obj, name):
-    """Add (or replace) a shape key copied from the base mesh, creating a Basis key when missing."""
+def _get_or_create_shape_key(obj, name):
+    """Return the shape key to write into, creating it (and a Basis key) when missing.
+
+    An existing key is reused as-is so its slider range, vertex group, and any keys that
+    use it as relative_key survive a re-run; only its coordinates are overwritten later.
+    """
     if obj.data.shape_keys is None:
         obj.shape_key_add(name="Basis", from_mix=False)
     existing = obj.data.shape_keys.key_blocks.get(name)
     if existing is not None:
-        obj.shape_key_remove(existing)
+        return existing
     return obj.shape_key_add(name=name, from_mix=False)
 
 
@@ -95,12 +99,13 @@ class OBJECT_OT_amt_cloth_fit(bpy.types.Operator):
                 self.report({'ERROR'}, "ボディメッシュに面がありません")
                 return {'CANCELLED'}
 
-            key_block = _create_shape_key(clothing_object, shape_key_name)
+            key_block = _get_or_create_shape_key(clothing_object, shape_key_name)
             matrix_world = clothing_object.matrix_world.copy()
 
+            # Start from the base mesh, never from a previous fit stored in a reused key.
             vertex_count = len(clothing_object.data.vertices)
             local_co = np.empty(vertex_count * 3, dtype=np.float64)
-            key_block.data.foreach_get('co', local_co)
+            clothing_object.data.vertices.foreach_get('co', local_co)
             local_co = local_co.reshape(vertex_count, 3)
 
             world_co = transform_points(local_co, matrix_world)
