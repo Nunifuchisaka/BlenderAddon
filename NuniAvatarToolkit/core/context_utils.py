@@ -41,6 +41,17 @@ def restore_selection_state(context, state):
         bpy.ops.object.mode_set(mode=state['mode'])
 
 
+def object_usability_error(context, obj, label, require_editable=False, require_visible=False):
+    """Return a Japanese error message when obj cannot be used in the current view layer, else None."""
+    if not any(candidate == obj for candidate in context.view_layer.objects):
+        return f"{label}「{obj.name}」が現在のビューレイヤーにありません(別シーンや除外されたコレクションにある可能性があります)"
+    if require_editable and (obj.library is not None or (obj.data is not None and obj.data.library is not None)):
+        return f"{label}「{obj.name}」はリンクされているため変更できません"
+    if require_visible and not obj.visible_get():
+        return f"{label}「{obj.name}」が非表示のため編集モードに入れません"
+    return None
+
+
 def select_faces_in_edit_mode(context, obj, face_indices):
     """Replace the current edit-mode selection with the specified faces of obj."""
     face_indices = frozenset(int(index) for index in face_indices)

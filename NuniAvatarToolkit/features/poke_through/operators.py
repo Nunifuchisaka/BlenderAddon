@@ -1,7 +1,10 @@
 import bpy
 import numpy as np
 
-from ...core.context_utils import reset_to_object_mode_with_active, select_faces_in_edit_mode
+from ...core.context_utils import (
+    capture_selection_state, object_usability_error, reset_to_object_mode_with_active, restore_selection_state,
+    select_faces_in_edit_mode,
+)
 from ...core.mesh_eval import (
     build_bvh_from_objects, compute_face_mask_from_vertex_flags, get_protected_vertex_mask, snapshot_deform_only,
 )
@@ -67,8 +70,61 @@ class OBJECT_OT_amt_check_poke_through(bpy.types.Operator):
             self.report({'ERROR'}, str(exc))
             return {'CANCELLED'}
 
-        reset_to_object_mode_with_active(context, body_object)
+        # The body ends up in Edit Mode with the result selected, so it must be editable and visible.
+        error = object_usability_error(context, body_object, "ボディメッシュ", require_editable=True, require_visible=True)
+        for obj in clothing_objects:
+            error = error or object_usability_error(context, obj, "服メッシュ")
+        if error:
+            self.report({'ERROR'}, error)
+            return {'CANCELLED'}
 
+        # Only a successful detection leaves the body in Edit Mode; every other exit restores the user's context.
+        previous_state = capture_selection_state(context)
+        selected = False
+        try:
+            reset_to_object_mode_with_active(context, body_object)
+            result = self._detect(context, props, body_object, clothing_objects)
+            if result is None:
+                return {'CANCELLED'}
+            face_indices, flags, depths, used_evaluated = result
+
+            mesh = body_object.data
+            vertex_count = int(flags.sum())
+            lines = []
+            if not used_evaluated:
+                lines.append(('WARNING', "一部のモディファイア構成のため、変形前(レスト)座標で判定しました"))
+
+            if not face_indices:
+                lines.append(('INFO', "貫通は検出されませんでした"))
+                if vertex_count:
+                    lines.append(('INFO', f"服の外に出ている頂点は {vertex_count} 個ありますが、判定モードの条件を満たす面はありません"))
+                set_report_lines(props.report_lines, lines)
+                self.report({'INFO'}, "貫通は検出されませんでした")
+                return {'FINISHED'}
+
+            select_faces_in_edit_mode(context, body_object, face_indices)
+            selected = True
+
+            max_depth = self._to_display_length(context, float(depths.max()))
+            lines.extend([
+                ('WARNING', f"貫通面: {len(face_indices)} / {len(mesh.polygons)} 面を選択しました"),
+                ('INFO', f"服の外に出ている頂点: {vertex_count} 個 / 最大突き出し量: {max_depth:.4f} m"),
+                ('INFO', "服メッシュフィットで服を膨らませるか、隠れメッシュ削除で体側を削って対処してください"),
+            ])
+            set_report_lines(props.report_lines, lines)
+
+            self.report({'INFO'}, f"{len(face_indices)} 面を貫通として選択しました(最大突き出し量 {max_depth:.4f} m)")
+            return {'FINISHED'}
+        finally:
+            if not selected:
+                restore_selection_state(context, previous_state)
+
+    @staticmethod
+    def _to_display_length(context, blender_units):
+        # Blender units are converted to metres through the scene unit scale.
+        return blender_units * context.scene.unit_settings.scale_length
+
+    def _detect(self, context, props, body_object, clothing_objects):
         wm = context.window_manager
         wm.progress_begin(0, 1)
         try:
@@ -76,7 +132,7 @@ class OBJECT_OT_amt_check_poke_through(bpy.types.Operator):
             bvh, _aabb_min, _aabb_max = build_bvh_from_objects(depsgraph, clothing_objects)
             if bvh is None:
                 self.report({'ERROR'}, "服メッシュに面がありません")
-                return {'CANCELLED'}
+                return None
 
             # The clothing only needs a surface to measure against, so it uses the fully
             # evaluated mesh above. The body instead is sampled per base-mesh vertex, so
@@ -91,35 +147,8 @@ class OBJECT_OT_amt_check_poke_through(bpy.types.Operator):
         finally:
             wm.progress_end()
 
-        mesh = body_object.data
-        face_mask = compute_face_mask_from_vertex_flags(mesh, flags, props.face_select_mode)
-        face_indices = np.flatnonzero(face_mask).tolist()
-
-        vertex_count = int(flags.sum())
-        lines = []
-        if not used_evaluated:
-            lines.append(('WARNING', "一部のモディファイア構成のため、変形前(レスト)座標で判定しました"))
-
-        if not face_indices:
-            lines.append(('INFO', "貫通は検出されませんでした"))
-            if vertex_count:
-                lines.append(('INFO', f"服の外に出ている頂点は {vertex_count} 個ありますが、判定モードの条件を満たす面はありません"))
-            set_report_lines(props.report_lines, lines)
-            self.report({'INFO'}, "貫通は検出されませんでした")
-            return {'FINISHED'}
-
-        select_faces_in_edit_mode(context, body_object, face_indices)
-
-        max_depth = float(depths.max())
-        lines.extend([
-            ('WARNING', f"貫通面: {len(face_indices)} / {len(mesh.polygons)} 面を選択しました"),
-            ('INFO', f"服の外に出ている頂点: {vertex_count} 個 / 最大突き出し量: {max_depth:.4f} m"),
-            ('INFO', "服メッシュフィットで服を膨らませるか、隠れメッシュ削除で体側を削って対処してください"),
-        ])
-        set_report_lines(props.report_lines, lines)
-
-        self.report({'INFO'}, f"{len(face_indices)} 面を貫通として選択しました(最大突き出し量 {max_depth:.4f} m)")
-        return {'FINISHED'}
+        face_mask = compute_face_mask_from_vertex_flags(body_object.data, flags, props.face_select_mode)
+        return np.flatnonzero(face_mask).tolist(), flags, depths, used_evaluated
 
 
 _classes = (
