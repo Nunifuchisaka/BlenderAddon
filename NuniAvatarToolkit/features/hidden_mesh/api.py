@@ -253,6 +253,7 @@ def _restore_selection_state(context, state):
             obj.select_set(True)
     active = state['active']
     if active is None or active.name not in context.view_layer.objects:
+        context.view_layer.objects.active = None
         return
     context.view_layer.objects.active = active
     if state['mode'] != 'OBJECT':
