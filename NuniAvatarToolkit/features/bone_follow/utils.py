@@ -20,6 +20,8 @@ def validate_weight_setup(target_object, armature_object, bone_name):
         raise ValueError(
             "対象メッシュはBone Parentされています。二重追従を防ぐため、先に親子関係を解除してください"
         )
+    if getattr(target_object, 'mode', 'OBJECT') == 'EDIT':
+        raise ValueError("対象メッシュが編集モードのため、オブジェクトモードに戻してから実行してください")
     if len(target_object.data.vertices) == 0:
         raise ValueError("対象メッシュに頂点がありません")
 

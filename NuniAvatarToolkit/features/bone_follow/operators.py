@@ -1,5 +1,6 @@
 import bpy
 
+from ...core.context_utils import reset_to_object_mode_with_active
 from ...core.report import set_report_lines
 from . import utils
 
@@ -19,6 +20,10 @@ class OBJECT_OT_amt_assign_rigid_bone_weight(bpy.types.Operator):
         props = context.scene.amt_bone_follow
         target_object = props.target_object
         armature_object = props.armature_object
+
+        # VertexGroup.add() fails in Edit Mode, so leave it before touching any data.
+        if target_object.mode != 'OBJECT' or context.mode != 'OBJECT':
+            reset_to_object_mode_with_active(context, target_object)
 
         try:
             result = utils.assign_rigid_bone_weight(

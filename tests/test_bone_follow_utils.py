@@ -55,6 +55,15 @@ class BoneWeightTests(unittest.TestCase):
     with self.assertRaisesRegex(ValueError, 'Bone Parent'):
       self.utils.validate_weight_setup(target, armature, 'Head')
 
+  def test_rejects_target_in_edit_mode(self):
+    target = make_object('Accessory')
+    target.mode = 'EDIT'
+    armature = make_object('Armature', 'ARMATURE')
+    armature.data = types.SimpleNamespace(bones={'Head': object()})
+
+    with self.assertRaisesRegex(ValueError, '編集モード'):
+      self.utils.validate_weight_setup(target, armature, 'Head')
+
 
 if __name__ == '__main__':
   unittest.main()
