@@ -42,12 +42,12 @@ def compute_alignment_delta(reference_object, reference_bone, target_object, tar
     return reference_head - target_head
 
 
-def find_orphan_armature_meshes(target_object):
-    """Return names of mesh objects in the scene that have an Armature modifier referencing
-    target_object, but are not descendants of target_object. These meshes will not follow
-    target_object when it is moved, since only the armature object itself is translated."""
+def find_orphan_armature_meshes(target_object, objects=None):
+    """Return names of mesh objects (the given ones, default all of bpy.data) that have an Armature
+    modifier referencing target_object, but are not descendants of target_object. These meshes will
+    not follow target_object when it is moved, since only the armature object itself is translated."""
     orphans = []
-    for obj in bpy.data.objects:
+    for obj in (bpy.data.objects if objects is None else objects):
         if obj.type != 'MESH':
             continue
         references_target = any(

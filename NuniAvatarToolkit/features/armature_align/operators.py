@@ -45,14 +45,31 @@ class OBJECT_OT_amt_align_armature(bpy.types.Operator):
             self.report({'INFO'}, "既に一致しています")
             return {'FINISHED'}
 
+        # Constraints, drivers or animation can override the new transform, so re-measure after
+        # the depsgraph update and roll back if the bones did not actually line up.
+        previous_basis = target_object.matrix_basis.copy()
         utils.apply_alignment(target_object, delta)
+        context.view_layer.update()
+        remaining = utils.compute_alignment_delta(
+            reference_object, props.reference_bone, target_object, props.target_bone,
+        )
+        if remaining.length > 1e-4:
+            target_object.matrix_basis = previous_basis
+            context.view_layer.update()
+            message = (
+                "移動後もボーン位置が一致しなかったため元に戻しました"
+                "(コンストレイント・ドライバー・アニメーションが位置を上書きしている可能性があります)"
+            )
+            set_report_lines(props.report_lines, [('ERROR', message)])
+            self.report({'ERROR'}, message)
+            return {'CANCELLED'}
 
         lines = [
             ('INFO', f"基準「{reference_object.name} / {props.reference_bone}」、"
                      f"対象「{target_object.name} / {props.target_bone}」"),
             ('INFO', f"移動量 X={delta.x:.4f}, Y={delta.y:.4f}, Z={delta.z:.4f}"),
         ]
-        orphans = utils.find_orphan_armature_meshes(target_object)
+        orphans = utils.find_orphan_armature_meshes(target_object, context.scene.objects)
         if orphans:
             lines.append((
                 'WARNING',
