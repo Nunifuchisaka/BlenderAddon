@@ -118,7 +118,7 @@ class TextureRelinkSafetyTests(unittest.TestCase):
   @classmethod
   def setUpClass(cls):
     bpy = types.ModuleType('bpy')
-    bpy.path = types.SimpleNamespace(abspath=lambda path: path)
+    bpy.path = types.SimpleNamespace(abspath=lambda path, library=None: path)
     cls.utils = load_module(
       'texture_relink_utils_for_test',
       'NuniAvatarToolkit/features/texture_relink/utils.py',
@@ -133,6 +133,7 @@ class TextureRelinkSafetyTests(unittest.TestCase):
         source='FILE',
         packed_file=None,
         filepath=str(Path(directory, 'missing', 'Body.png')),
+        library=None,
         reload=lambda: self.fail('partial match must not reload the image'),
       )
 
@@ -140,6 +141,48 @@ class TextureRelinkSafetyTests(unittest.TestCase):
 
     self.assertEqual(result['relinked'], [])
     self.assertEqual(len(result['ambiguous']), 1)
+
+  def _missing_image(self, directory, name, **extra):
+    values = dict(
+      name=name, source='FILE', packed_file=None, library=None,
+      filepath=str(Path(directory, 'missing', name)), reload=lambda: None,
+    )
+    values.update(extra)
+    return types.SimpleNamespace(**values)
+
+  def test_linked_images_are_reported_but_not_changed(self):
+    with tempfile.TemporaryDirectory() as directory:
+      Path(directory, 'Body.png').touch()
+      image = self._missing_image(directory, 'Body.png', library=object())
+      old_path = image.filepath
+
+      result = self.utils.relink_missing_textures([image], directory)
+
+    self.assertEqual(result['linked'], [image])
+    self.assertEqual(result['relinked'], [])
+    self.assertEqual(image.filepath, old_path)
+
+  def test_failed_reload_is_rolled_back_and_batch_continues(self):
+    def broken_reload():
+      raise RuntimeError('cannot reload')
+
+    with tempfile.TemporaryDirectory() as directory:
+      Path(directory, 'Broken.png').touch()
+      Path(directory, 'Good.png').touch()
+      broken = self._missing_image(directory, 'Broken.png', reload=broken_reload)
+      good = self._missing_image(directory, 'Good.png')
+      old_path = broken.filepath
+
+      result = self.utils.relink_missing_textures([broken, good], directory)
+
+    self.assertEqual(broken.filepath, old_path)
+    self.assertEqual([image for image, _ in result['failed']], [broken])
+    self.assertEqual([image for image, _ in result['relinked']], [good])
+
+  def test_webp_files_are_candidates(self):
+    with tempfile.TemporaryDirectory() as directory:
+      Path(directory, 'Skin.webp').touch()
+      self.assertEqual(len(self.utils.find_candidate_files(directory)), 1)
 
 
 class DiagnosticsRotationTests(unittest.TestCase):
@@ -173,6 +216,37 @@ class DiagnosticsRotationTests(unittest.TestCase):
     self.assertFalse(self.utils.has_unapplied_rotation(quaternion_identity))
     self.assertTrue(self.utils.has_unapplied_rotation(axis_angle))
     self.assertTrue(self.utils.has_unapplied_rotation(euler))
+
+  def test_delta_rotation_and_scale_are_checked(self):
+    delta_euler = types.SimpleNamespace(
+      rotation_mode='XYZ', rotation_euler=(0.0, 0.0, 0.0), delta_rotation_euler=(0.0, 0.2, 0.0),
+    )
+    delta_quaternion = types.SimpleNamespace(
+      rotation_mode='QUATERNION', rotation_quaternion=(1.0, 0.0, 0.0, 0.0),
+      delta_rotation_quaternion=(0.9238795, 0.0, 0.3826834, 0.0),
+    )
+    delta_scale = types.SimpleNamespace(scale=(1.0, 1.0, 1.0), delta_scale=(1.0, 2.0, 1.0))
+    negative_delta = types.SimpleNamespace(scale=(1.0, 1.0, 1.0), delta_scale=(-1.0, -1.0, -1.0))
+
+    self.assertTrue(self.utils.has_unapplied_rotation(delta_euler))
+    self.assertTrue(self.utils.has_unapplied_rotation(delta_quaternion))
+    self.assertEqual(self.utils.has_non_uniform_or_negative_scale(delta_scale), (False, True))
+    self.assertEqual(self.utils.has_non_uniform_or_negative_scale(negative_delta), (True, False))
+
+  def test_ranks_are_reported_per_platform(self):
+    self.assertEqual(self.utils.platform_ranks(25000, 'triangles'), "PC: Excellent / Quest: Very Poor")
+    self.assertEqual(self.utils.platform_ranks(5856, 'triangles'), "PC: Excellent / Quest: Excellent")
+    self.assertEqual(self.utils.platform_ranks(70001, 'triangles'), "PC: Very Poor / Quest: Very Poor")
+    self.assertEqual(self.utils.platform_ranks(2, 'material_slots'), "PC: Excellent / Quest: Medium")
+    self.assertEqual(self.utils.platform_ranks(120, 'bones'), "PC: Good / Quest: Medium")
+
+  def test_material_slots_count_every_slot(self):
+    material = object()
+    meshes = [
+      types.SimpleNamespace(material_slots=[types.SimpleNamespace(material=material)] * 20),
+      types.SimpleNamespace(material_slots=[types.SimpleNamespace(material=None)]),
+    ]
+    self.assertEqual(self.utils.count_material_slots(meshes), 21)
 
 
 class HiddenMeshSafetyMarginTests(unittest.TestCase):
