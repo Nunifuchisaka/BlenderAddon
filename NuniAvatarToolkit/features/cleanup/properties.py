@@ -1,10 +1,7 @@
 import bpy
 
+from ...core.object_polls import mesh_object_poll
 from ...core.report import AMT_ReportLine
-
-
-def _mesh_object_poll(self, obj):
-    return obj.type == 'MESH'
 
 
 class AMT_CleanupProperties(bpy.types.PropertyGroup):
@@ -12,7 +9,7 @@ class AMT_CleanupProperties(bpy.types.PropertyGroup):
         type=bpy.types.Object,
         name="対象メッシュ",
         description="不要データを削除する対象のメッシュオブジェクトを指定してください",
-        poll=_mesh_object_poll,
+        poll=mesh_object_poll,
     )
     remove_empty_vertex_groups: bpy.props.BoolProperty(
         name="空の頂点グループ",

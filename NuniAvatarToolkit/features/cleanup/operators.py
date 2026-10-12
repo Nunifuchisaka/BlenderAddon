@@ -37,7 +37,7 @@ def _report_lines_from_result(result):
     if 'loose_verts' in result:
         lines.append(('INFO', f"浮遊頂点: {result['loose_verts']} 個 / 浮遊エッジ: {result['loose_edges']} 個"))
     if not lines:
-        lines.append(('WARNING', "チェック項目が一つも有効になっていません"))
+        lines.append(('WARNING', "チェック項目がひとつも有効になっていません"))
     return lines
 
 

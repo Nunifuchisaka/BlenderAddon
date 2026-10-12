@@ -1,10 +1,7 @@
 import bpy
 
+from ...core.object_polls import mesh_object_poll
 from ...core.report import AMT_ReportLine
-
-
-def _mesh_object_poll(self, obj):
-    return obj.type == 'MESH'
 
 
 class AMT_ClothFitProperties(bpy.types.PropertyGroup):
@@ -12,13 +9,13 @@ class AMT_ClothFitProperties(bpy.types.PropertyGroup):
         type=bpy.types.Object,
         name="ボディメッシュ",
         description="服を合わせる先となる体のメッシュオブジェクトを指定してください",
-        poll=_mesh_object_poll,
+        poll=mesh_object_poll,
     )
     clothing_object: bpy.props.PointerProperty(
         type=bpy.types.Object,
         name="服メッシュ",
         description="体の形状に合わせて変形させる服のメッシュオブジェクトを指定してください",
-        poll=_mesh_object_poll,
+        poll=mesh_object_poll,
     )
     vertex_group: bpy.props.StringProperty(
         name="対象頂点グループ",

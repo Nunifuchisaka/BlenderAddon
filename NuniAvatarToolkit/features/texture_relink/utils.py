@@ -101,7 +101,7 @@ def relink_missing_textures(images, directory):
     directory must be an existing directory with absolute path (caller should pass bpy.path.abspath'd path).
     Raises ValueError if directory does not exist."""
     if not directory or not os.path.isdir(directory):
-        raise ValueError(f"Search folder does not exist: {directory}")
+        raise ValueError(f"検索フォルダが見つかりません: {directory}")
 
     candidates = find_candidate_files(directory)
 

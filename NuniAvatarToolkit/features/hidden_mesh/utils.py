@@ -36,23 +36,6 @@ def generate_hemisphere_directions(sample_count):
     return tuple(directions)
 
 
-def get_protected_vertex_mask(body_obj, group_name):
-    n = len(body_obj.data.vertices)
-    mask = np.zeros(n, dtype=bool)
-    if not group_name:
-        return mask
-    group = body_obj.vertex_groups.get(group_name)
-    if group is None:
-        return mask
-    group_index = group.index
-    for i, vert in enumerate(body_obj.data.vertices):
-        for g in vert.groups:
-            if g.group == group_index and g.weight > 0.0:
-                mask[i] = True
-                break
-    return mask
-
-
 def _point_in_expanded_aabb(pos, mn, mx, margin):
     return (
         mn[0] - margin <= pos.x <= mx[0] + margin and

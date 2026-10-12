@@ -1,11 +1,8 @@
 import bpy
 
+from ...core.object_polls import armature_object_poll
 from ...core.report import AMT_ReportLine
 from . import utils
-
-
-def _armature_object_poll(self, obj):
-    return obj.type == 'ARMATURE'
 
 
 def _on_reference_object_update(self, context):
@@ -31,7 +28,7 @@ class AMT_ArmatureAlignProperties(bpy.types.PropertyGroup):
         type=bpy.types.Object,
         name="基準Armature",
         description="移動させずに基準とするArmatureを指定してください",
-        poll=_armature_object_poll,
+        poll=armature_object_poll,
         update=_on_reference_object_update,
     )
     reference_bone: bpy.props.StringProperty(name="基準ボーン")
@@ -40,7 +37,7 @@ class AMT_ArmatureAlignProperties(bpy.types.PropertyGroup):
         type=bpy.types.Object,
         name="対象Armature",
         description="位置を合わせて移動させるArmatureを指定してください",
-        poll=_armature_object_poll,
+        poll=armature_object_poll,
         update=_on_target_object_update,
     )
     target_bone: bpy.props.StringProperty(name="対象ボーン")

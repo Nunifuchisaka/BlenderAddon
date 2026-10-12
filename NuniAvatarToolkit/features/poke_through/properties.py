@@ -1,10 +1,7 @@
 import bpy
 
+from ...core.object_polls import mesh_object_poll
 from ...core.report import AMT_ReportLine
-
-
-def _mesh_object_poll(self, obj):
-    return obj.type == 'MESH'
 
 
 class AMT_PokeThroughClothingItem(bpy.types.PropertyGroup):
@@ -12,7 +9,7 @@ class AMT_PokeThroughClothingItem(bpy.types.PropertyGroup):
         type=bpy.types.Object,
         name="服メッシュ",
         description="体を覆っている服メッシュを指定してください",
-        poll=_mesh_object_poll,
+        poll=mesh_object_poll,
     )
 
 
@@ -21,7 +18,7 @@ class AMT_PokeThroughProperties(bpy.types.PropertyGroup):
         type=bpy.types.Object,
         name="ボディメッシュ",
         description="服から突き出ていないかを調べたいアバターの体メッシュを指定してください",
-        poll=_mesh_object_poll,
+        poll=mesh_object_poll,
     )
     clothing_objects: bpy.props.CollectionProperty(
         type=AMT_PokeThroughClothingItem,

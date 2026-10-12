@@ -2,7 +2,7 @@ import bpy
 import numpy as np
 
 from ...core.context_utils import reset_to_object_mode_with_active
-from ...core.mesh_eval import build_bvh_from_objects
+from ...core.mesh_eval import build_bvh_from_objects, transform_points
 from ...core.report import set_report_lines
 from . import utils
 
@@ -103,15 +103,13 @@ class OBJECT_OT_amt_cloth_fit(bpy.types.Operator):
             key_block.data.foreach_get('co', local_co)
             local_co = local_co.reshape(vertex_count, 3)
 
-            mw = np.array(matrix_world, dtype=np.float64)
-            world_co = local_co @ mw[:3, :3].T + mw[:3, 3]
+            world_co = transform_points(local_co, matrix_world)
 
             fitted_world, moved_mask, max_move = utils.compute_fitted_positions(
                 world_co, weights, bvh, props.offset, props.max_search_distance,
             )
 
-            inv = np.array(matrix_world.inverted_safe(), dtype=np.float64)
-            fitted_local = fitted_world @ inv[:3, :3].T + inv[:3, 3]
+            fitted_local = transform_points(fitted_world, matrix_world.inverted_safe())
             # float32 matches the shape key's own storage, so foreach_set takes the fast buffer path.
             key_block.data.foreach_set('co', np.ascontiguousarray(fitted_local, dtype=np.float32).ravel())
 

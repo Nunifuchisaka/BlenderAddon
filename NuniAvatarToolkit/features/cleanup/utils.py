@@ -56,100 +56,100 @@ def find_noop_shape_keys(obj, threshold):
 
 
 def _iter_nodes_recursive(node_tree, visited=None):
-  """Yield nodes from node_tree and nested node groups without looping forever."""
-  if node_tree is None:
-    return
-  if visited is None:
-    visited = set()
-  tree_id = id(node_tree)
-  if tree_id in visited:
-    return
-  visited.add(tree_id)
-  for node in node_tree.nodes:
-    yield node
-    if node.type == 'GROUP':
-      yield from _iter_nodes_recursive(getattr(node, 'node_tree', None), visited)
+    """Yield nodes from node_tree and nested node groups without looping forever."""
+    if node_tree is None:
+        return
+    if visited is None:
+        visited = set()
+    tree_id = id(node_tree)
+    if tree_id in visited:
+        return
+    visited.add(tree_id)
+    for node in node_tree.nodes:
+        yield node
+        if node.type == 'GROUP':
+            yield from _iter_nodes_recursive(getattr(node, 'node_tree', None), visited)
 
 
 def _referenced_material_attribute_names(obj):
-  """Return UV/color/generic attribute names referenced by material node trees."""
-  referenced = set()
-  for mat in obj.data.materials:
-    if mat is None or not mat.use_nodes or mat.node_tree is None:
-      continue
-    for node in _iter_nodes_recursive(mat.node_tree):
-      referenced.update(_attribute_names_from_node(node))
-  return referenced
+    """Return UV/color/generic attribute names referenced by material node trees."""
+    referenced = set()
+    for mat in obj.data.materials:
+        if mat is None or not mat.use_nodes or mat.node_tree is None:
+            continue
+        for node in _iter_nodes_recursive(mat.node_tree):
+            referenced.update(_attribute_names_from_node(node))
+    return referenced
 
 
 def _attribute_names_from_node(node):
-  """Return explicit attribute names stored on a shader or geometry node."""
-  names = set()
-  for attr in ('uv_map', 'layer_name', 'attribute_name'):
-    name = getattr(node, attr, "")
-    if name:
-      names.add(name)
-  for socket in getattr(node, 'inputs', ()):
-    value = getattr(socket, 'default_value', None)
-    if isinstance(value, str) and value:
-      names.add(value)
-  return names
+    """Return explicit attribute names stored on a shader or geometry node."""
+    names = set()
+    for attr in ('uv_map', 'layer_name', 'attribute_name'):
+        name = getattr(node, attr, "")
+        if name:
+            names.add(name)
+    for socket in getattr(node, 'inputs', ()):
+        value = getattr(socket, 'default_value', None)
+        if isinstance(value, str) and value:
+            names.add(value)
+    return names
 
 
 def _referenced_modifier_attribute_names(obj):
-  """Best-effort collection of named attributes referenced by modifiers.
+    """Best-effort collection of named attributes referenced by modifiers.
 
-  Blender stores classic modifier settings as RNA string properties and Geometry
-  Nodes socket values as modifier ID properties. Treating every matching string as
-  a reference is intentionally conservative because this powers destructive cleanup.
-  """
-  referenced = set()
-  for mod in obj.modifiers:
-    for node in _iter_nodes_recursive(getattr(mod, 'node_group', None)):
-      referenced.update(_attribute_names_from_node(node))
-    bl_rna = getattr(mod, 'bl_rna', None)
-    for prop in getattr(bl_rna, 'properties', ()):
-      if getattr(prop, 'type', None) != 'STRING' or prop.identifier == 'name':
-        continue
-      try:
-        value = getattr(mod, prop.identifier)
-      except (AttributeError, TypeError):
-        continue
-      if value:
-        referenced.add(value)
-    for _key, value in getattr(mod, 'items', lambda: ())():
-      if isinstance(value, str) and value:
-        referenced.add(value)
-  return referenced
+    Blender stores classic modifier settings as RNA string properties and Geometry
+    Nodes socket values as modifier ID properties. Treating every matching string as
+    a reference is intentionally conservative because this powers destructive cleanup.
+    """
+    referenced = set()
+    for mod in obj.modifiers:
+        for node in _iter_nodes_recursive(getattr(mod, 'node_group', None)):
+            referenced.update(_attribute_names_from_node(node))
+        bl_rna = getattr(mod, 'bl_rna', None)
+        for prop in getattr(bl_rna, 'properties', ()):
+            if getattr(prop, 'type', None) != 'STRING' or prop.identifier == 'name':
+                continue
+            try:
+                value = getattr(mod, prop.identifier)
+            except (AttributeError, TypeError):
+                continue
+            if value:
+                referenced.add(value)
+        for _key, value in getattr(mod, 'items', lambda: ())():
+            if isinstance(value, str) and value:
+                referenced.add(value)
+    return referenced
 
 
 def _referenced_attribute_names(obj):
-  return _referenced_material_attribute_names(obj) | _referenced_modifier_attribute_names(obj)
+    return _referenced_material_attribute_names(obj) | _referenced_modifier_attribute_names(obj)
 
 
 def find_unused_uv_maps(obj):
-  uv_layers = obj.data.uv_layers
-  if len(uv_layers) <= 1:
-    return []
-  referenced = _referenced_attribute_names(obj)
-  if uv_layers.active:
-    referenced.add(uv_layers.active.name)
-  referenced.update(uv.name for uv in uv_layers if getattr(uv, 'active_render', False))
-  return [uv.name for uv in uv_layers if uv.name not in referenced]
+    uv_layers = obj.data.uv_layers
+    if len(uv_layers) <= 1:
+        return []
+    referenced = _referenced_attribute_names(obj)
+    if uv_layers.active:
+        referenced.add(uv_layers.active.name)
+    referenced.update(uv.name for uv in uv_layers if getattr(uv, 'active_render', False))
+    return [uv.name for uv in uv_layers if uv.name not in referenced]
 
 
 def find_unused_color_attributes(obj):
-  attrs = obj.data.color_attributes
-  if len(attrs) == 0:
-    return []
-  referenced = _referenced_attribute_names(obj)
-  active_color = getattr(attrs, 'active_color', None)
-  if active_color is not None:
-    referenced.add(active_color.name)
-  render_color_index = getattr(attrs, 'render_color_index', -1)
-  if 0 <= render_color_index < len(attrs):
-    referenced.add(attrs[render_color_index].name)
-  return [c.name for c in attrs if c.name not in referenced]
+    attrs = obj.data.color_attributes
+    if len(attrs) == 0:
+        return []
+    referenced = _referenced_attribute_names(obj)
+    active_color = getattr(attrs, 'active_color', None)
+    if active_color is not None:
+        referenced.add(active_color.name)
+    render_color_index = getattr(attrs, 'render_color_index', -1)
+    if 0 <= render_color_index < len(attrs):
+        referenced.add(attrs[render_color_index].name)
+    return [c.name for c in attrs if c.name not in referenced]
 
 
 def count_unused_material_slots(obj):

@@ -18,23 +18,6 @@ def validate_check_setup(body_object, clothing_objects):
             raise ValueError("ボディメッシュと同じオブジェクトが服メッシュに指定されています")
 
 
-def get_protected_vertex_mask(obj, group_name):
-    """Per-vertex bool mask of vertices carrying weight in group_name."""
-    mask = np.zeros(len(obj.data.vertices), dtype=bool)
-    if not group_name:
-        return mask
-    group = obj.vertex_groups.get(group_name)
-    if group is None:
-        return mask
-    group_index = group.index
-    for i, vert in enumerate(obj.data.vertices):
-        for g in vert.groups:
-            if g.group == group_index and g.weight > 0.0:
-                mask[i] = True
-                break
-    return mask
-
-
 def compute_protruding_vertex_flags(positions, bvh, protected_mask, threshold, max_distance):
     """Body vertices poking out through the clothing surface.
 

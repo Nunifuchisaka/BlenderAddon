@@ -34,6 +34,29 @@ def restore_modifiers(disabled):
         mod.show_viewport = prev_state
 
 
+def transform_points(points, matrix):
+    """Apply a 4x4 affine matrix to an (N,3) float64 array of points."""
+    m = np.array(matrix, dtype=np.float64)
+    return points @ m[:3, :3].T + m[:3, 3]
+
+
+def get_protected_vertex_mask(obj, group_name):
+    """Per-vertex bool mask of vertices carrying weight in group_name (all False when unset/missing)."""
+    mask = np.zeros(len(obj.data.vertices), dtype=bool)
+    if not group_name:
+        return mask
+    group = obj.vertex_groups.get(group_name)
+    if group is None:
+        return mask
+    group_index = group.index
+    for i, vert in enumerate(obj.data.vertices):
+        for g in vert.groups:
+            if g.group == group_index and g.weight > 0.0:
+                mask[i] = True
+                break
+    return mask
+
+
 def extract_world_positions_normals(mesh, matrix_world):
     n = len(mesh.vertices)
     co = np.empty(n * 3, dtype=np.float64)
@@ -44,8 +67,7 @@ def extract_world_positions_normals(mesh, matrix_world):
     mesh.vertices.foreach_get('normal', nrm)
     nrm = nrm.reshape(n, 3)
 
-    mw = np.array(matrix_world, dtype=np.float64)
-    world_co = co @ mw[:3, :3].T + mw[:3, 3]
+    world_co = transform_points(co, matrix_world)
 
     normal_mat = np.array(matrix_world.inverted_safe().transposed().to_3x3(), dtype=np.float64)
     world_nrm = nrm @ normal_mat.T
@@ -123,8 +145,7 @@ def build_bvh_from_objects(depsgraph, objects):
             co = np.empty(n * 3, dtype=np.float64)
             mesh_eval.vertices.foreach_get('co', co)
             co = co.reshape(n, 3)
-            mw = np.array(obj_eval.matrix_world, dtype=np.float64)
-            world_co = co @ mw[:3, :3].T + mw[:3, 3]
+            world_co = transform_points(co, obj_eval.matrix_world)
 
             t = len(mesh_eval.loop_triangles)
             tri_idx = np.empty(t * 3, dtype=np.int64)

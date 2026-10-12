@@ -31,7 +31,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### core/ の役割分担（重要な区別）
 
 - `core/report.py` は **例外的に** `bpy.types` クラス（`AMT_ReportLine`, `AMT_UL_report_lines`）を定義するので register が必要 → だからトップ `__init__.py` の `_modules` 先頭に入る。レポート表示は `set_report_lines(collection_prop, [(level, text), ...])` 経由で統一。
-- それ以外の core モジュール（`mesh_eval.py`, `context_utils.py`, `ui.py`, `uv_regions.py`）は **register しない**。feature から import される純ヘルパー/定数のみ。新規に共有コードを足すときは、`bpy.types` クラスを含むなら report と同じく登録対象に加える判断が必要。
+- それ以外の core モジュール（`mesh_eval.py`, `context_utils.py`, `object_polls.py`, `ui.py`, `uv_regions.py`）は **register しない**。feature から import される純ヘルパー/定数のみ。新規に共有コードを足すときは、`bpy.types` クラスを含むなら report と同じく登録対象に加える判断が必要。
 
 ### 命名規約（既存に合わせる）
 

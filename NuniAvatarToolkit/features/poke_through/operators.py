@@ -2,7 +2,9 @@ import bpy
 import numpy as np
 
 from ...core.context_utils import reset_to_object_mode_with_active, select_faces_in_edit_mode
-from ...core.mesh_eval import build_bvh_from_objects, compute_face_mask_from_vertex_flags, snapshot_deform_only
+from ...core.mesh_eval import (
+    build_bvh_from_objects, compute_face_mask_from_vertex_flags, get_protected_vertex_mask, snapshot_deform_only,
+)
 from ...core.report import set_report_lines
 from . import utils
 
@@ -81,7 +83,7 @@ class OBJECT_OT_amt_check_poke_through(bpy.types.Operator):
             # the resulting flags stay 1:1 with obj.data and can drive a face selection.
             positions, _normals, used_evaluated = snapshot_deform_only(depsgraph, body_object)
 
-            protected_mask = utils.get_protected_vertex_mask(body_object, props.exclude_vertex_group)
+            protected_mask = get_protected_vertex_mask(body_object, props.exclude_vertex_group)
             flags, depths = utils.compute_protruding_vertex_flags(
                 positions, bvh, protected_mask,
                 props.protrusion_threshold, props.max_search_distance,
