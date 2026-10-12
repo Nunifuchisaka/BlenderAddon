@@ -125,9 +125,12 @@ class OBJECT_OT_amt_cloth_fit(bpy.types.Operator):
             fitted_local = transform_points(fitted_world, matrix_world.inverted_safe())
             # A reused key may be relative to another key; Blender applies (key - relative_key),
             # so offset by that key to keep the same deformation as a Basis-relative key.
+            shape_keys = clothing_object.data.shape_keys
             relative_key = key_block.relative_key
-            reference_key = clothing_object.data.shape_keys.reference_key
-            if relative_key is not None and relative_key != reference_key and relative_key != key_block:
+            if (
+                shape_keys.use_relative and relative_key is not None
+                and relative_key != shape_keys.reference_key and relative_key != key_block
+            ):
                 relative_co = np.empty(vertex_count * 3, dtype=np.float64)
                 relative_key.data.foreach_get('co', relative_co)
                 fitted_local = fitted_local + (relative_co.reshape(vertex_count, 3) - local_co)
