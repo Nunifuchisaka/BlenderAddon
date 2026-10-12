@@ -8,8 +8,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## ビルド・配布・テスト
 
-- **ビルド工程は無い**。`NuniAvatarToolkit` フォルダをそのままZIP圧縮したものが配布物。
-- **lint/自動テストは無い**。動作確認は Blender 3.6+ 実機で行うしかない（`bpy` はエディタ外で import 不可）。コード変更後は Blenderでアドオンを再読み込み（無効化→有効化、または再起動）して確認する。
+- **配布ZIP**: `powershell -ExecutionPolicy Bypass -File tools/build-release.ps1` でリポジトリ直下に `NuniAvatarToolkit-<版数>.zip` を作る。版数は `bl_info["version"]` から読み、`__pycache__`・`*.pyc`・休止中の `features/texture_bake/` は除外する（ZIP内のトップは `NuniAvatarToolkit/`）。
+- **unittest（Blender外で実行可）**: `cd tests && python -m unittest test_safety_utils test_bone_follow_utils`。各 feature の `utils.py` を単体ロードしてテストするため、`utils.py` から `core` などを相対 import しないこと。
+- **スモークテスト（Blender背景モード）**: `"C:/Program Files/Blender Foundation/Blender 5.2/blender.exe" --background --factory-startup --python tests/<名前>.py` で以下の3本を実行する。
+  - `blender_hidden_mesh_smoke.py`（成功時に `BLENDER_HIDDEN_MESH_SMOKE_OK` を出力）
+  - `blender_bone_follow_smoke.py`（同 `... smoke test passed`）
+  - `blender_review_fixes_smoke.py`（同 `BLENDER_REVIEW_FIXES_SMOKE_OK`）
+- lint は無い。UIの見た目などテストで確かめられない部分は、Blender実機でアドオンを再読み込み（無効化→有効化、または再起動）して確認する（`bpy` はエディタ外で import 不可）。
 - `bl_info["version"]` と `CHANGELOG.md` は機能追加時に手動で揃える。
 
 ## アーキテクチャ
