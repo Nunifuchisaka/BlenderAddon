@@ -7,15 +7,19 @@ _CONFLICTING_MODIFIER_MESSAGE = (
 )
 
 
-def _has_conflicting_armature_modifier(target_object, armature_object):
-    """True when only Armature modifiers bound to a different armature exist (nothing reusable)."""
-    armature_modifiers = [
+def _armature_modifiers(target_object):
+    return [
         modifier for modifier in getattr(target_object, 'modifiers', ())
         if modifier.type == 'ARMATURE'
     ]
-    if any(modifier.object == armature_object or modifier.object is None for modifier in armature_modifiers):
-        return False
-    return bool(armature_modifiers)
+
+
+def _has_conflicting_armature_modifier(target_object, armature_object):
+    """True when any Armature modifier is bound to a different armature (it would deform the mesh twice)."""
+    return any(
+        modifier.object is not None and modifier.object != armature_object
+        for modifier in _armature_modifiers(target_object)
+    )
 
 
 def validate_weight_setup(target_object, armature_object, bone_name, allow_edit_mode=False):
@@ -46,10 +50,10 @@ def validate_weight_setup(target_object, armature_object, bone_name, allow_edit_
 
 
 def _find_or_create_armature_modifier(target_object, armature_object):
-    armature_modifiers = [
-        modifier for modifier in target_object.modifiers
-        if modifier.type == 'ARMATURE'
-    ]
+    if _has_conflicting_armature_modifier(target_object, armature_object):
+        raise ValueError(_CONFLICTING_MODIFIER_MESSAGE)
+
+    armature_modifiers = _armature_modifiers(target_object)
     for modifier in armature_modifiers:
         if modifier.object == armature_object:
             return modifier, False
@@ -60,12 +64,6 @@ def _find_or_create_armature_modifier(target_object, armature_object):
     if unassigned_modifier is not None:
         unassigned_modifier.object = armature_object
         return unassigned_modifier, False
-
-    conflicting_modifier = next(
-        (modifier for modifier in armature_modifiers if modifier.object is not None), None,
-    )
-    if conflicting_modifier is not None:
-        raise ValueError(_CONFLICTING_MODIFIER_MESSAGE)
 
     modifier = target_object.modifiers.new("Armature", 'ARMATURE')
     modifier.object = armature_object

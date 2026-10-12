@@ -82,6 +82,27 @@ class BoneWeightTests(unittest.TestCase):
     with self.assertRaisesRegex(ValueError, '別のArmature'):
       self.utils.validate_weight_setup(target, armature, 'Head', allow_edit_mode=True)
 
+  def test_rejects_other_armature_even_alongside_reusable_modifiers(self):
+    armature = make_object('Armature', 'ARMATURE')
+    armature.data = types.SimpleNamespace(bones={'Head': object()})
+    other = make_object('Other', 'ARMATURE')
+    for reusable in (armature, None):
+      target = make_object('Accessory')
+      target.modifiers = [
+        types.SimpleNamespace(type='ARMATURE', object=reusable),
+        types.SimpleNamespace(type='ARMATURE', object=other),
+      ]
+      with self.assertRaisesRegex(ValueError, '別のArmature'):
+        self.utils.validate_weight_setup(target, armature, 'Head')
+
+  def test_accepts_modifier_bound_to_same_armature(self):
+    armature = make_object('Armature', 'ARMATURE')
+    armature.data = types.SimpleNamespace(bones={'Head': object()})
+    target = make_object('Accessory')
+    target.modifiers = [types.SimpleNamespace(type='ARMATURE', object=armature)]
+
+    self.utils.validate_weight_setup(target, armature, 'Head')
+
 
 if __name__ == '__main__':
   unittest.main()
