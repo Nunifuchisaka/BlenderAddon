@@ -21,6 +21,13 @@ class OBJECT_OT_amt_assign_rigid_bone_weight(bpy.types.Operator):
         target_object = props.target_object
         armature_object = props.armature_object
 
+        # Reject bad input before leaving Edit Mode so a cancelled run keeps the user's context.
+        try:
+            utils.validate_weight_setup(target_object, armature_object, props.bone_name, allow_edit_mode=True)
+        except ValueError as exc:
+            self.report({'ERROR'}, str(exc))
+            return {'CANCELLED'}
+
         # VertexGroup.add() fails in Edit Mode, so leave it before touching any data.
         if target_object.mode != 'OBJECT' or context.mode != 'OBJECT':
             reset_to_object_mode_with_active(context, target_object)

@@ -1,7 +1,7 @@
 """Helpers for preparing a mesh for rigid bone weighting before it is joined."""
 
 
-def validate_weight_setup(target_object, armature_object, bone_name):
+def validate_weight_setup(target_object, armature_object, bone_name, allow_edit_mode=False):
     if target_object is None:
         raise ValueError("対象メッシュを指定してください")
     if target_object.type != 'MESH':
@@ -20,7 +20,7 @@ def validate_weight_setup(target_object, armature_object, bone_name):
         raise ValueError(
             "対象メッシュはBone Parentされています。二重追従を防ぐため、先に親子関係を解除してください"
         )
-    if getattr(target_object, 'mode', 'OBJECT') == 'EDIT':
+    if not allow_edit_mode and getattr(target_object, 'mode', 'OBJECT') == 'EDIT':
         raise ValueError("対象メッシュが編集モードのため、オブジェクトモードに戻してから実行してください")
     if len(target_object.data.vertices) == 0:
         raise ValueError("対象メッシュに頂点がありません")

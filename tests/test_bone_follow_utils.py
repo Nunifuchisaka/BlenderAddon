@@ -64,6 +64,14 @@ class BoneWeightTests(unittest.TestCase):
     with self.assertRaisesRegex(ValueError, '編集モード'):
       self.utils.validate_weight_setup(target, armature, 'Head')
 
+  def test_edit_mode_can_be_allowed_for_pre_validation(self):
+    target = make_object('Accessory')
+    target.mode = 'EDIT'
+    armature = make_object('Armature', 'ARMATURE')
+    armature.data = types.SimpleNamespace(bones={'Head': object()})
+
+    self.utils.validate_weight_setup(target, armature, 'Head', allow_edit_mode=True)
+
 
 if __name__ == '__main__':
   unittest.main()
