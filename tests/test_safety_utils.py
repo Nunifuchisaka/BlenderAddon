@@ -92,6 +92,27 @@ class CleanupSafetyTests(unittest.TestCase):
     self.assertEqual(self.utils.find_unused_uv_maps(obj), ['UnusedUV'])
     self.assertEqual(self.utils.find_unused_color_attributes(obj), ['UnusedColor'])
 
+  def test_modifiers_without_id_property_support_are_skipped(self):
+    def raise_type_error():
+      raise TypeError("bpy_struct.items(): this type doesn't support IDProperties")
+
+    modifier = types.SimpleNamespace(
+      name='Armature',
+      bl_rna=types.SimpleNamespace(properties=[]),
+      items=raise_type_error,
+    )
+    uv_layers = NamedList([
+      types.SimpleNamespace(name='UVMap', active_render=True),
+      types.SimpleNamespace(name='UnusedUV', active_render=False),
+    ])
+    uv_layers.active = uv_layers[0]
+    obj = types.SimpleNamespace(
+      data=types.SimpleNamespace(materials=[], uv_layers=uv_layers),
+      modifiers=[modifier],
+    )
+
+    self.assertEqual(self.utils.find_unused_uv_maps(obj), ['UnusedUV'])
+
 
 class TextureRelinkSafetyTests(unittest.TestCase):
   @classmethod

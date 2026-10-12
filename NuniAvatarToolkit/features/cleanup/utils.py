@@ -31,26 +31,41 @@ def find_empty_vertex_groups(obj):
     return [vg.name for vg in obj.vertex_groups if vg.index not in used_indices and vg.name not in referenced]
 
 
+def _shape_key_coordinates(key_block, vertex_count):
+    co = np.empty(vertex_count * 3, dtype=np.float64)
+    key_block.data.foreach_get('co', co)
+    return co.reshape(vertex_count, 3)
+
+
 def find_noop_shape_keys(obj, threshold):
-    """Shape keys (excluding Basis) whose max per-vertex offset from Basis is below threshold."""
+    """Shape keys whose max per-vertex offset from their own relative_key is below threshold.
+
+    The reference (Basis) key, keys that other keys use as relative_key (removing them would
+    rebase the dependants), and absolute (non-relative) shape keys are never reported.
+    """
     sk = obj.data.shape_keys
-    if not sk or len(sk.key_blocks) < 2:
+    if not sk or len(sk.key_blocks) < 2 or not sk.use_relative:
         return []
     n = len(obj.data.vertices)
     if n == 0:
         return []
 
-    basis_co = np.empty(n * 3, dtype=np.float64)
-    sk.key_blocks[0].data.foreach_get('co', basis_co)
-    basis_co = basis_co.reshape(n, 3)
+    key_blocks = list(sk.key_blocks)
+    reference = key_blocks[0]
+    used_as_relative = {
+        kb.relative_key.name for kb in key_blocks
+        if kb.relative_key is not None and kb.relative_key.name != kb.name
+    }
 
     noop = []
-    for kb in sk.key_blocks[1:]:
-        co = np.empty(n * 3, dtype=np.float64)
-        kb.data.foreach_get('co', co)
-        co = co.reshape(n, 3)
-        max_delta = float(np.max(np.linalg.norm(co - basis_co, axis=1)))
-        if max_delta < threshold:
+    for kb in key_blocks[1:]:
+        if kb.name in used_as_relative:
+            continue
+        base = kb.relative_key if kb.relative_key is not None else reference
+        if base.name == kb.name:
+            continue
+        delta = _shape_key_coordinates(kb, n) - _shape_key_coordinates(base, n)
+        if float(np.max(np.linalg.norm(delta, axis=1))) < threshold:
             noop.append(kb.name)
     return noop
 
@@ -96,6 +111,14 @@ def _attribute_names_from_node(node):
     return names
 
 
+def _id_property_values(mod):
+    # Only some modifier types (e.g. Geometry Nodes) support ID properties; the rest raise TypeError.
+    try:
+        return [value for _key, value in mod.items()]
+    except (AttributeError, TypeError):
+        return []
+
+
 def _referenced_modifier_attribute_names(obj):
     """Best-effort collection of named attributes referenced by modifiers.
 
@@ -117,7 +140,7 @@ def _referenced_modifier_attribute_names(obj):
                 continue
             if value:
                 referenced.add(value)
-        for _key, value in getattr(mod, 'items', lambda: ())():
+        for value in _id_property_values(mod):
             if isinstance(value, str) and value:
                 referenced.add(value)
     return referenced
@@ -155,6 +178,20 @@ def find_unused_color_attributes(obj):
 def count_unused_material_slots(obj):
     used = {poly.material_index for poly in obj.data.polygons}
     return sum(1 for i in range(len(obj.material_slots)) if i not in used)
+
+
+def delete_loose_geometry(bm):
+    """Remove edges and vertices that belong to no face, regardless of selection/hide state.
+
+    Returns (removed_vertex_count, removed_edge_count).
+    """
+    loose_edges = [e for e in bm.edges if not e.link_faces]
+    loose_verts = [v for v in bm.verts if not v.link_faces]
+    for edge in loose_edges:
+        bm.edges.remove(edge)
+    for vert in loose_verts:
+        bm.verts.remove(vert)
+    return len(loose_verts), len(loose_edges)
 
 
 def count_loose_geometry(obj):

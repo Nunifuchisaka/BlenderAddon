@@ -1,3 +1,4 @@
+import bmesh
 import bpy
 
 from ...core.context_utils import reset_to_object_mode_with_active
@@ -121,14 +122,21 @@ class OBJECT_OT_amt_cleanup_execute(bpy.types.Operator):
             bpy.ops.object.material_slot_remove_unused()
             removed_summary.append("未使用マテリアルスロット")
 
+        report_lines = [('INFO', "削除が完了しました。再スキャンして結果を確認してください")]
         if props.remove_loose_geometry:
+            # Edit-mode bmesh keeps shape keys and other layers in sync when written back.
             bpy.ops.object.mode_set(mode='EDIT')
-            bpy.ops.mesh.select_all(action='DESELECT')
-            bpy.ops.mesh.delete_loose(use_verts=True, use_edges=True, use_faces=False)
-            bpy.ops.object.mode_set(mode='OBJECT')
-            removed_summary.append("浮遊頂点/エッジ")
+            try:
+                bm = bmesh.from_edit_mesh(obj.data)
+                removed_verts, removed_edges = utils.delete_loose_geometry(bm)
+                bmesh.update_edit_mesh(obj.data)
+            finally:
+                bpy.ops.object.mode_set(mode='OBJECT')
+            loose_text = f"浮遊頂点 {removed_verts} 個・浮遊エッジ {removed_edges} 個"
+            removed_summary.append(loose_text)
+            report_lines.append(('INFO', f"{loose_text}を削除しました"))
 
-        set_report_lines(props.report_lines, [('INFO', "削除が完了しました。再スキャンして結果を確認してください")])
+        set_report_lines(props.report_lines, report_lines)
         if removed_summary:
             self.report({'INFO'}, "削除しました: " + "、".join(removed_summary))
         else:
