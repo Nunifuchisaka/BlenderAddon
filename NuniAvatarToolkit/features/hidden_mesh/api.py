@@ -234,6 +234,31 @@ def _resolve_mesh_object(value, label):
     return value
 
 
+def _capture_selection_state(context):
+    active = context.view_layer.objects.active
+    return {
+        'active': active,
+        'selected': list(context.selected_objects),
+        'mode': active.mode if active is not None else 'OBJECT',
+    }
+
+
+def _restore_selection_state(context, state):
+    if context.mode != 'OBJECT':
+        bpy.ops.object.mode_set(mode='OBJECT')
+    for obj in context.selected_objects:
+        obj.select_set(False)
+    for obj in state['selected']:
+        if obj.name in context.view_layer.objects:
+            obj.select_set(True)
+    active = state['active']
+    if active is None or active.name not in context.view_layer.objects:
+        return
+    context.view_layer.objects.active = active
+    if state['mode'] != 'OBJECT':
+        bpy.ops.object.mode_set(mode=state['mode'])
+
+
 def run(
     body,
     clothing=(),
@@ -265,21 +290,27 @@ def run(
     if normalized_action not in {'ANALYZE', 'SELECT', 'DELETE'}:
         raise HiddenMeshError(f"不明なactionです: {action}")
 
-    session = AnalysisSession(
-        context,
-        body_object,
-        clothing_objects,
-        ray_samples=ray_samples,
-        ray_epsilon_ratio=ray_epsilon_ratio,
-        face_select_mode=face_select_mode,
-        safety_margin=safety_margin,
-        include_body_self_occlusion=include_body_self_occlusion,
-        self_occlusion_min_distance_ratio=self_occlusion_min_distance_ratio,
-        exclude_vertex_group=exclude_vertex_group,
-    )
-    for _ in session:
-        pass
-    analysis = session.finish()
+    # ANALYZE is read-only, so it hands the user's active object, selection and mode back.
+    previous_state = _capture_selection_state(context) if normalized_action == 'ANALYZE' else None
+    try:
+        session = AnalysisSession(
+            context,
+            body_object,
+            clothing_objects,
+            ray_samples=ray_samples,
+            ray_epsilon_ratio=ray_epsilon_ratio,
+            face_select_mode=face_select_mode,
+            safety_margin=safety_margin,
+            include_body_self_occlusion=include_body_self_occlusion,
+            self_occlusion_min_distance_ratio=self_occlusion_min_distance_ratio,
+            exclude_vertex_group=exclude_vertex_group,
+        )
+        for _ in session:
+            pass
+        analysis = session.finish()
+    finally:
+        if previous_state is not None:
+            _restore_selection_state(context, previous_state)
     result = analysis.to_dict()
     result['action'] = normalized_action
 
