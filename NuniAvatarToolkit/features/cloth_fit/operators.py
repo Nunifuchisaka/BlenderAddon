@@ -14,6 +14,9 @@ def _find_shape_key(obj, name):
     return shape_keys.key_blocks.get(name)
 
 
+_BASIS_KEY_NAME = "Basis"
+
+
 def _get_or_create_shape_key(obj, name):
     """Return the shape key to write into, creating it (and a Basis key) when missing.
 
@@ -21,7 +24,7 @@ def _get_or_create_shape_key(obj, name):
     use it as relative_key survive a re-run; only its coordinates are overwritten later.
     """
     if obj.data.shape_keys is None:
-        obj.shape_key_add(name="Basis", from_mix=False)
+        obj.shape_key_add(name=_BASIS_KEY_NAME, from_mix=False)
     existing = obj.data.shape_keys.key_blocks.get(name)
     if existing is not None:
         return existing
@@ -76,7 +79,12 @@ class OBJECT_OT_amt_cloth_fit(bpy.types.Operator):
             return {'CANCELLED'}
 
         existing_key = _find_shape_key(clothing_object, shape_key_name)
-        if existing_key is not None and existing_key == clothing_object.data.shape_keys.reference_key:
+        # Without shape keys a Basis key is created first, so that name would also hit the reference key.
+        would_be_reference = (
+            existing_key == clothing_object.data.shape_keys.reference_key if existing_key is not None
+            else clothing_object.data.shape_keys is None and shape_key_name == _BASIS_KEY_NAME
+        )
+        if would_be_reference:
             self.report({'ERROR'}, f"「{shape_key_name}」はベースのシェイプキーのため上書きできません")
             return {'CANCELLED'}
 
@@ -115,6 +123,14 @@ class OBJECT_OT_amt_cloth_fit(bpy.types.Operator):
             )
 
             fitted_local = transform_points(fitted_world, matrix_world.inverted_safe())
+            # A reused key may be relative to another key; Blender applies (key - relative_key),
+            # so offset by that key to keep the same deformation as a Basis-relative key.
+            relative_key = key_block.relative_key
+            reference_key = clothing_object.data.shape_keys.reference_key
+            if relative_key is not None and relative_key != reference_key and relative_key != key_block:
+                relative_co = np.empty(vertex_count * 3, dtype=np.float64)
+                relative_key.data.foreach_get('co', relative_co)
+                fitted_local = fitted_local + (relative_co.reshape(vertex_count, 3) - local_co)
             # float32 matches the shape key's own storage, so foreach_set takes the fast buffer path.
             key_block.data.foreach_set('co', np.ascontiguousarray(fitted_local, dtype=np.float32).ravel())
 
