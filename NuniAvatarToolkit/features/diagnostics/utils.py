@@ -1,7 +1,7 @@
 """Pure analysis logic for the diagnostics feature. No bpy.types here.
 
-The rank thresholds below are approximate reference values based on VRChat's publicly
-documented Avatar Performance Ranking System. VRChat has revised these numbers before and
+The rank thresholds below follow VRChat's publicly documented Avatar Performance Ranking
+System for PC and for Quest (Mobile/Android). VRChat has revised these numbers before and
 may again - they are shown to the user labeled as reference-only, never as authoritative,
 and this module must not be treated as the source of truth for actual VRChat behavior.
 """
@@ -13,24 +13,17 @@ import numpy as np
 
 DEFAULT_COLLECTION_NAME_PATTERN = re.compile(r"Collection(\.\d+)?")
 
-TRIANGLE_THRESHOLDS = (
-    ("Excellent", 7500),
-    ("Good", 20000),
-    ("Medium", 32000),
-    ("Poor", 70000),
-)
-MATERIAL_THRESHOLDS = (
-    ("Excellent", 1),
-    ("Good", 2),
-    ("Medium", 4),
-    ("Poor", 8),
-)
-BONE_THRESHOLDS = (
-    ("Excellent", 75),
-    ("Good", 150),
-    ("Medium", 256),
-    ("Poor", 400),
-)
+# (label, inclusive upper limit) per rank; anything above the last limit is "Very Poor".
+PC_THRESHOLDS = {
+    'triangles': (("Excellent", 32000), ("Good", 70000), ("Medium", 70000), ("Poor", 70000)),
+    'material_slots': (("Excellent", 4), ("Good", 8), ("Medium", 16), ("Poor", 32)),
+    'bones': (("Excellent", 75), ("Good", 150), ("Medium", 256), ("Poor", 400)),
+}
+QUEST_THRESHOLDS = {
+    'triangles': (("Excellent", 7500), ("Good", 10000), ("Medium", 15000), ("Poor", 20000)),
+    'material_slots': (("Excellent", 1), ("Good", 1), ("Medium", 2), ("Poor", 4)),
+    'bones': (("Excellent", 75), ("Good", 90), ("Medium", 150), ("Poor", 150)),
+}
 
 
 def rank_for(value, thresholds):
@@ -38,6 +31,13 @@ def rank_for(value, thresholds):
         if value <= limit:
             return label
     return "Very Poor"
+
+
+def platform_ranks(value, category):
+    """Reference rank text for both platforms, e.g. "PC: Excellent / Quest: Good"."""
+    pc = rank_for(value, PC_THRESHOLDS[category])
+    quest = rank_for(value, QUEST_THRESHOLDS[category])
+    return f"PC: {pc} / Quest: {quest}"
 
 
 def get_avatar_mesh_objects(collection):
@@ -66,12 +66,8 @@ def count_triangles(mesh_objects, depsgraph):
 
 
 def count_material_slots(mesh_objects):
-    materials = set()
-    for obj in mesh_objects:
-        for slot in obj.material_slots:
-            if slot.material:
-                materials.add(slot.material)
-    return len(materials)
+    """Total material slots over all meshes; VRChat counts a material used in 20 slots as 20."""
+    return sum(len(obj.material_slots) for obj in mesh_objects)
 
 
 def count_bones(armature_objects):
@@ -86,29 +82,59 @@ def count_shape_keys(mesh_objects):
     return total
 
 
+def _count_non_finite(collection, n):
+    co = np.empty(n * 3, dtype=np.float64)
+    collection.foreach_get('co', co)
+    return int(np.count_nonzero(~np.isfinite(co.reshape(n, 3)).all(axis=1)))
+
+
 def find_non_finite_vertices(obj):
     n = len(obj.data.vertices)
     if n == 0:
         return 0
-    co = np.empty(n * 3, dtype=np.float64)
-    obj.data.vertices.foreach_get('co', co)
-    return int(np.count_nonzero(~np.isfinite(co.reshape(n, 3)).all(axis=1)))
+    return _count_non_finite(obj.data.vertices, n)
+
+
+def find_non_finite_shape_keys(obj):
+    """[(shape_key_name, vertex_count), ...] for non-reference shape keys holding NaN/Inf coordinates.
+
+    The reference (Basis) key mirrors the mesh vertices, which find_non_finite_vertices already checks.
+    """
+    shape_keys = obj.data.shape_keys
+    n = len(obj.data.vertices)
+    if not shape_keys or n == 0:
+        return []
+    results = []
+    for key_block in list(shape_keys.key_blocks)[1:]:
+        count = _count_non_finite(key_block.data, n)
+        if count:
+            results.append((key_block.name, count))
+    return results
 
 
 def has_non_uniform_or_negative_scale(obj):
-    sx, sy, sz = obj.scale
+    delta = getattr(obj, 'delta_scale', (1.0, 1.0, 1.0))
+    sx, sy, sz = (s * d for s, d in zip(obj.scale, delta))
     negative = sx < 0 or sy < 0 or sz < 0
     non_uniform = not (abs(sx - sy) < 1e-6 and abs(sy - sz) < 1e-6)
     return negative, non_uniform
 
 
+def _quaternion_is_rotated(quaternion):
+    w, x, y, z = quaternion
+    return abs(abs(w) - 1.0) > 1e-6 or any(abs(v) > 1e-6 for v in (x, y, z))
+
+
 def has_unapplied_rotation(obj):
+    # Delta rotation follows rotation_mode: quaternion mode uses the delta quaternion, Euler modes the
+    # delta Euler. Axis-angle delta is not exposed to Python, so only the main channel is checked there.
     if obj.rotation_mode == 'QUATERNION':
-        w, x, y, z = obj.rotation_quaternion
-        return abs(abs(w) - 1.0) > 1e-6 or any(abs(v) > 1e-6 for v in (x, y, z))
+        delta = getattr(obj, 'delta_rotation_quaternion', (1.0, 0.0, 0.0, 0.0))
+        return _quaternion_is_rotated(obj.rotation_quaternion) or _quaternion_is_rotated(delta)
     if obj.rotation_mode == 'AXIS_ANGLE':
         return abs(obj.rotation_axis_angle[0]) > 1e-6
-    return any(abs(v) > 1e-6 for v in obj.rotation_euler)
+    delta_euler = getattr(obj, 'delta_rotation_euler', (0.0, 0.0, 0.0))
+    return any(abs(v) > 1e-6 for v in obj.rotation_euler) or any(abs(v) > 1e-6 for v in delta_euler)
 
 
 def count_non_manifold(obj):

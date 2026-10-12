@@ -17,7 +17,14 @@ class OBJECT_OT_amt_diagnostics_run(bpy.types.Operator):
     def execute(self, context):
         props = context.scene.amt_diagnostics
         collection = props.avatar_collection
-        depsgraph = context.evaluated_depsgraph_get()
+
+        # Evaluation uses this scene's depsgraph, so a collection from another scene would be misread.
+        scene_collection = context.scene.collection
+        if collection != scene_collection and collection not in scene_collection.children_recursive:
+            message = f"コレクション「{collection.name}」が現在のシーンにありません。対象のシーンで実行してください"
+            set_report_lines(props.report_lines, [('ERROR', message)])
+            self.report({'ERROR'}, message)
+            return {'CANCELLED'}
 
         mesh_objs = utils.get_avatar_mesh_objects(collection)
         armature_objs = utils.get_avatar_armature_objects(collection)
@@ -26,18 +33,24 @@ class OBJECT_OT_amt_diagnostics_run(bpy.types.Operator):
             set_report_lines(props.report_lines, [('WARNING', "コレクション内にメッシュオブジェクトが見つかりません")])
             return {'CANCELLED'}
 
+        # Unsaved Edit Mode changes live only in the edit mesh; flush them so obj.data is current.
+        for obj in mesh_objs:
+            if obj.mode == 'EDIT':
+                obj.update_from_editmode()
+        depsgraph = context.evaluated_depsgraph_get()
+
         lines = []
         any_issue = False
 
         tris = utils.count_triangles(mesh_objs, depsgraph)
-        lines.append(('INFO', f"ポリゴン数(三角形換算): {tris} 【目安: {utils.rank_for(tris, utils.TRIANGLE_THRESHOLDS)}】"))
+        lines.append(('INFO', f"ポリゴン数(三角形換算): {tris:,} 【{utils.platform_ranks(tris, 'triangles')}】"))
 
         mats = utils.count_material_slots(mesh_objs)
-        lines.append(('INFO', f"マテリアル数: {mats} 【目安: {utils.rank_for(mats, utils.MATERIAL_THRESHOLDS)}】"))
+        lines.append(('INFO', f"マテリアルスロット数: {mats:,} 【{utils.platform_ranks(mats, 'material_slots')}】"))
 
         bones = utils.count_bones(armature_objs)
-        bone_rank = utils.rank_for(bones, utils.BONE_THRESHOLDS) if armature_objs else "N/A"
-        lines.append(('INFO', f"ボーン数: {bones} 【目安: {bone_rank}】"))
+        bone_rank = utils.platform_ranks(bones, 'bones') if armature_objs else "N/A"
+        lines.append(('INFO', f"ボーン数: {bones:,} 【{bone_rank}】"))
 
         if len(armature_objs) == 0:
             any_issue = True
@@ -57,6 +70,9 @@ class OBJECT_OT_amt_diagnostics_run(bpy.types.Operator):
             if non_finite > 0:
                 any_issue = True
                 lines.append(('ERROR', f"[{obj.name}] 不正な座標(NaN/Inf)の頂点が {non_finite} 個あります"))
+            for key_name, key_count in utils.find_non_finite_shape_keys(obj):
+                any_issue = True
+                lines.append(('ERROR', f"[{obj.name}] シェイプキー「{key_name}」に不正な座標(NaN/Inf)の頂点が {key_count} 個あります"))
 
             negative, non_uniform = utils.has_non_uniform_or_negative_scale(obj)
             if negative:
@@ -64,11 +80,11 @@ class OBJECT_OT_amt_diagnostics_run(bpy.types.Operator):
                 lines.append(('WARNING', f"[{obj.name}] スケールにマイナス値が含まれています"))
             if non_uniform:
                 any_issue = True
-                lines.append(('WARNING', f"[{obj.name}] スケールが不均一です(X/Y/Zが異なります)"))
+                lines.append(('WARNING', f"[{obj.name}] スケールが不均一です(X/Y/Zが異なります。デルタスケールを含む)"))
 
             if utils.has_unapplied_rotation(obj):
                 any_issue = True
-                lines.append(('WARNING', f"[{obj.name}] 回転が適用されていません"))
+                lines.append(('WARNING', f"[{obj.name}] 回転が適用されていません(デルタ回転を含む)"))
 
             non_manifold = utils.count_non_manifold(obj)
             if non_manifold > 0:
