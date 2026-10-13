@@ -1,6 +1,9 @@
 import bpy
 
-from ...core.context_utils import capture_selection_state, reset_to_object_mode_with_active, restore_selection_state
+from ...core.context_utils import (
+    capture_selection_state, object_usability_error, reset_to_object_mode_with_active,
+    restore_selection_state,
+)
 from . import utils
 
 
@@ -39,10 +42,16 @@ class OBJECT_OT_amt_merge_join(bpy.types.Operator):
     def execute(self, context):
         active_object = context.active_object
         mesh_objects = [o for o in context.selected_objects if o.type == 'MESH']
+        if active_object not in mesh_objects:
+            self.report({'ERROR'}, "結合先のアクティブメッシュも選択してください")
+            return {'CANCELLED'}
         editable = set(context.selected_editable_objects)
         for obj in mesh_objects:
-            if obj not in editable or obj.library is not None or obj.data.library is not None:
-                self.report({'ERROR'}, f"「{obj.name}」はリンクされているなどの理由で編集できないため結合できません")
+            error = object_usability_error(
+                context, obj, "結合対象", require_editable=True, require_single_user=True,
+            )
+            if error or obj not in editable:
+                self.report({'ERROR'}, error or f"「{obj.name}」は編集できないため結合できません")
                 return {'CANCELLED'}
 
         active_name = active_object.name
@@ -88,15 +97,20 @@ class OBJECT_OT_amt_merge_material_slots(bpy.types.Operator):
     def _check(self, context):
         """Return (obj, remap) or None after reporting why nothing can be done. Changes nothing."""
         obj = context.active_object
-        if obj.library is not None or obj.data.library is not None:
-            self.report({'ERROR'}, f"「{obj.name}」はリンクされているため変更できません")
-            return None
-        if obj.data.users > 1:
-            self.report({'ERROR'}, f"「{obj.name}」のメッシュは他のオブジェクトと共有されているため変更できません(先にシングルユーザー化してください)")
+        error = object_usability_error(
+            context, obj, "対象メッシュ", require_editable=True, require_single_user=True,
+        )
+        if error:
+            self.report({'ERROR'}, error)
             return None
         remap = _duplicate_slot_remap(obj)
         if not remap:
             self.report({'INFO'}, "統合できる重複マテリアルスロットはありませんでした")
+            return None
+        blockers = utils.material_slot_remapping_blockers(obj)
+        if blockers:
+            self.report({'ERROR'}, "マテリアル番号を使用するモディファイアがあるため統合できません: "
+                        + "、".join(blockers) + "。先にモディファイアを適用してから再実行してください")
             return None
         return obj, remap
 
@@ -122,6 +136,9 @@ class OBJECT_OT_amt_merge_material_slots(bpy.types.Operator):
         previous_state = capture_selection_state(context)
         try:
             reset_to_object_mode_with_active(context, obj)
+            if not bpy.ops.object.material_slot_remove.poll():
+                self.report({'ERROR'}, "マテリアルスロットを編集できません。対象メッシュの選択・表示状態を確認してください")
+                return {'CANCELLED'}
             for poly in obj.data.polygons:
                 if poly.material_index in remap:
                     poly.material_index = remap[poly.material_index]

@@ -3,6 +3,7 @@ import time
 import bmesh
 import bpy
 
+from ...core.context_utils import capture_selection_state, restore_selection_state
 from . import api, utils
 
 
@@ -61,7 +62,9 @@ class OBJECT_OT_amt_select_hidden_faces(bpy.types.Operator):
         scene = context.scene
         props = scene.amt_hidden_mesh
         clothing_objs = [item.object for item in props.clothing_objects if item.object is not None]
+        previous_state = capture_selection_state(context)
         try:
+            api.validate_body_action(context, props.body_object, 'SELECT')
             self._session = api.AnalysisSession(
                 context,
                 props.body_object,
@@ -74,7 +77,8 @@ class OBJECT_OT_amt_select_hidden_faces(bpy.types.Operator):
                 self_occlusion_min_distance_ratio=props.self_occlusion_min_distance_ratio,
                 exclude_vertex_group=props.exclude_vertex_group,
             )
-        except api.HiddenMeshError as exc:
+        except (ValueError, RuntimeError) as exc:
+            restore_selection_state(context, previous_state)
             self.report({'ERROR'}, str(exc))
             return {'CANCELLED'}
 

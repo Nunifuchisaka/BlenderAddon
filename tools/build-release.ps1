@@ -1,5 +1,6 @@
 ﻿param(
-    [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot)
+    [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot),
+    [string]$OutputDirectory = $RepoRoot
 )
 
 # 配布用ZIPを作成する。ZIPのトップレベルに NuniAvatarToolkit フォルダを置き、
@@ -26,19 +27,25 @@ if (-not $match.Success) {
 }
 $version = "{0}.{1}.{2}" -f $match.Groups[1].Value, $match.Groups[2].Value, $match.Groups[3].Value
 
-$zipPath = Join-Path $RepoRoot "$addonName-$version.zip"
+$addonRoot = (Resolve-Path $addonDir).Path.TrimEnd('\', '/')
+$licensePath = Join-Path $RepoRoot "LICENSE"
+if (-not (Test-Path $licensePath -PathType Leaf)) {
+    Write-Error "配布用 LICENSE が見つかりません: $licensePath"
+    exit 1
+}
+
+[System.IO.Directory]::CreateDirectory($OutputDirectory) | Out-Null
+$zipPath = Join-Path $OutputDirectory "$addonName-$version.zip"
 if (Test-Path $zipPath) {
     Remove-Item $zipPath -Force
 }
 
-$addonRoot = (Resolve-Path $addonDir).Path.TrimEnd('\', '/')
-$excludedDir = Join-Path $addonRoot "features\texture_bake"
-
 $files = Get-ChildItem -Path $addonRoot -Recurse -File | Where-Object {
-    $full = $_.FullName
-    -not ($full -like "*\__pycache__\*") -and
+    $relative = $_.FullName.Substring($addonRoot.Length + 1).Replace('\', '/')
+    $relative -notmatch '(^|/)__pycache__/' -and
     $_.Extension -ne ".pyc" -and
-    -not $full.StartsWith($excludedDir + "\", [System.StringComparison]::OrdinalIgnoreCase)
+    -not $relative.StartsWith("features/texture_bake/", [System.StringComparison]::OrdinalIgnoreCase) -and
+    $relative -ne "LICENSE"
 } | Sort-Object FullName
 
 # エントリ名の区切りは macOS/Linux でも展開できるよう必ず "/" にする。
@@ -51,9 +58,12 @@ try {
             $zip, $file.FullName, $entryName, [System.IO.Compression.CompressionLevel]::Optimal
         ) | Out-Null
     }
+    [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+        $zip, $licensePath, "$addonName/LICENSE", [System.IO.Compression.CompressionLevel]::Optimal
+    ) | Out-Null
 }
 finally {
     $zip.Dispose()
 }
 
-Write-Host "作成しました: $zipPath ($($files.Count) ファイル)"
+Write-Host "作成しました: $zipPath ($($files.Count + 1) ファイル)"

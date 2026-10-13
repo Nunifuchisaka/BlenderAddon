@@ -71,7 +71,9 @@ class OBJECT_OT_amt_check_poke_through(bpy.types.Operator):
             return {'CANCELLED'}
 
         # The body ends up in Edit Mode with the result selected, so it must be editable and visible.
-        error = object_usability_error(context, body_object, "ボディメッシュ", require_editable=True, require_visible=True)
+        error = object_usability_error(
+            context, body_object, "ボディメッシュ", require_editable=True, require_visible=True, require_single_user=True,
+        )
         for obj in clothing_objects:
             error = error or object_usability_error(context, obj, "服メッシュ")
         if error:
@@ -115,6 +117,9 @@ class OBJECT_OT_amt_check_poke_through(bpy.types.Operator):
 
             self.report({'INFO'}, f"{len(face_indices)} 面を貫通として選択しました(最大突き出し量 {max_depth:.4f} m)")
             return {'FINISHED'}
+        except ValueError as exc:
+            self.report({'ERROR'}, str(exc))
+            return {'CANCELLED'}
         finally:
             if not selected:
                 restore_selection_state(context, previous_state)

@@ -45,7 +45,7 @@ class OBJECT_OT_amt_diagnostics_run(bpy.types.Operator):
         tris = utils.count_triangles(mesh_objs, depsgraph)
         lines.append(('INFO', f"ポリゴン数(三角形換算): {tris:,} 【{utils.platform_ranks(tris, 'triangles')}】"))
 
-        mats = utils.count_material_slots(mesh_objs)
+        mats = utils.count_material_slots(mesh_objs, depsgraph)
         lines.append(('INFO', f"マテリアルスロット数: {mats:,} 【{utils.platform_ranks(mats, 'material_slots')}】"))
 
         bones = utils.count_bones(armature_objs)
@@ -74,6 +74,11 @@ class OBJECT_OT_amt_diagnostics_run(bpy.types.Operator):
                 any_issue = True
                 lines.append(('ERROR', f"[{obj.name}] シェイプキー「{key_name}」に不正な座標(NaN/Inf)の頂点が {key_count} 個あります"))
 
+            non_manifold = utils.count_non_manifold(obj)
+            if non_manifold > 0:
+                lines.append(('INFO', f"[{obj.name}] 非多様体(ノンマニフォールド)エッジが {non_manifold} 個あります"))
+
+        for obj in mesh_objs + armature_objs:
             negative, non_uniform = utils.has_non_uniform_or_negative_scale(obj)
             if negative:
                 any_issue = True
@@ -85,10 +90,6 @@ class OBJECT_OT_amt_diagnostics_run(bpy.types.Operator):
             if utils.has_unapplied_rotation(obj):
                 any_issue = True
                 lines.append(('WARNING', f"[{obj.name}] 回転が適用されていません(デルタ回転を含む)"))
-
-            non_manifold = utils.count_non_manifold(obj)
-            if non_manifold > 0:
-                lines.append(('INFO', f"[{obj.name}] 非多様体(ノンマニフォールド)エッジが {non_manifold} 個あります"))
 
         for armature_obj in armature_objs:
             zero_weight = utils.find_zero_weight_bones(armature_obj, mesh_objs)

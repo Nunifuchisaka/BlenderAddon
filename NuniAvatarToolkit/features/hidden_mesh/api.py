@@ -13,7 +13,8 @@ import numpy as np
 
 from ...core import mesh_eval, uv_regions
 from ...core.context_utils import (
-    capture_selection_state, reset_to_object_mode_with_active, restore_selection_state, select_faces_in_edit_mode,
+    capture_selection_state, object_usability_error, reset_to_object_mode_with_active,
+    restore_selection_state, select_faces_in_edit_mode,
 )
 from . import utils
 
@@ -53,7 +54,22 @@ def _object_pointer(obj):
     return as_pointer() if as_pointer is not None else id(obj)
 
 
-def _validate_mesh_inputs(body_object, clothing_objects, include_body_self_occlusion):
+def validate_body_action(context, body_object, action):
+    """Reject unsafe edit-mode actions before changing selection or creating backups."""
+    if body_object is None or getattr(body_object, 'type', None) != 'MESH':
+        raise HiddenMeshError("有効なボディメッシュを指定してください")
+    changes_mesh = action != 'ANALYZE'
+    error = object_usability_error(
+        context, body_object, "ボディメッシュ",
+        require_editable=changes_mesh,
+        require_visible=changes_mesh,
+        require_single_user=changes_mesh,
+    )
+    if error is not None:
+        raise HiddenMeshError(error)
+
+
+def _validate_mesh_inputs(context, body_object, clothing_objects, include_body_self_occlusion):
     if body_object is None or getattr(body_object, 'type', None) != 'MESH':
         raise HiddenMeshError("有効なボディメッシュを指定してください")
     if body_object.data is None or len(body_object.data.vertices) == 0:
@@ -75,6 +91,13 @@ def _validate_mesh_inputs(body_object, clothing_objects, include_body_self_occlu
     )
     if empty_object is not None:
         raise HiddenMeshError(f"服メッシュ「{empty_object.name}」に頂点がありません")
+
+    for obj, label in [(body_object, "ボディメッシュ")] + [
+        (obj, "服メッシュ") for obj in clothing_objects
+    ]:
+        error = object_usability_error(context, obj, label)
+        if error is not None:
+            raise HiddenMeshError(error)
     return clothing_objects
 
 
@@ -103,24 +126,32 @@ class AnalysisSession:
             raise HiddenMeshError("サンプル数は4～256の範囲で指定してください")
 
         clothing_objects = _validate_mesh_inputs(
+            context,
             body_object,
             clothing_objects,
             include_body_self_occlusion,
         )
         reset_to_object_mode_with_active(context, body_object)
         depsgraph = context.evaluated_depsgraph_get()
-
-        clothing_bvh, clothing_min, clothing_max = mesh_eval.build_bvh_from_objects(
-            depsgraph,
-            clothing_objects,
-        )
-        self_bvh = None
-        if include_body_self_occlusion:
-            self_bvh, _, _ = mesh_eval.build_bvh_from_objects(depsgraph, [body_object])
+        if not body_object.evaluated_get(depsgraph).is_evaluated:
+            raise HiddenMeshError(
+                f"ボディメッシュ「{body_object.name}」を現在のビューポートで評価できません。"
+                "オブジェクトとコレクションの表示を有効にしてください"
+            )
+        try:
+            clothing_bvh, clothing_min, clothing_max = mesh_eval.build_bvh_from_objects(
+                depsgraph,
+                clothing_objects,
+            )
+            self_bvh = None
+            if include_body_self_occlusion:
+                self_bvh, _, _ = mesh_eval.build_bvh_from_objects(depsgraph, [body_object])
+            positions, normals, used_evaluated = mesh_eval.snapshot_deform_only(depsgraph, body_object)
+        except ValueError as exc:
+            raise HiddenMeshError(str(exc)) from exc
         if clothing_bvh is None and self_bvh is None:
             raise HiddenMeshError("遮蔽物として使用できるメッシュがありません")
 
-        positions, normals, used_evaluated = mesh_eval.snapshot_deform_only(depsgraph, body_object)
         bbox_diagonal = mesh_eval.compute_bbox_diagonal(positions)
         epsilon = max(bbox_diagonal * ray_epsilon_ratio, 1e-6)
         max_distance = max(bbox_diagonal * utils.RAY_MAX_DISTANCE_FACTOR, 1.0)
@@ -136,6 +167,7 @@ class AnalysisSession:
         self.estimated_ray_count = self.total * ray_samples
         self._face_select_mode = face_select_mode
         self._safety_margin = safety_margin
+        self._protected_mask = protected_mask
         self._flags = np.zeros(self.total, dtype=bool)
         self._generator = utils.iter_hidden_vertex_flags(
             positions,
@@ -160,6 +192,11 @@ class AnalysisSession:
     def finish(self):
         mesh = self.body_object.data
         raw_mask = mesh_eval.compute_face_mask_from_vertex_flags(mesh, self._flags, self._face_select_mode)
+        # Protection is an independent veto, even when ANY accepts another hidden vertex.
+        if self._protected_mask.any():
+            for polygon in mesh.polygons:
+                if self._protected_mask[list(polygon.vertices)].any():
+                    raw_mask[polygon.index] = False
         final_mask = utils.inset_hidden_face_mask(mesh, raw_mask, self._safety_margin)
         return HiddenMeshAnalysis(
             body_name=self.body_object.name,
@@ -173,7 +210,11 @@ class AnalysisSession:
 
 def select_faces(context, body_object, face_indices):
     """Replace the current edit-mode selection with the specified body faces."""
-    select_faces_in_edit_mode(context, body_object, face_indices)
+    validate_body_action(context, body_object, 'SELECT')
+    try:
+        select_faces_in_edit_mode(context, body_object, face_indices)
+    except ValueError as exc:
+        raise HiddenMeshError(str(exc)) from exc
 
 
 def create_body_backup(context, body_object):
@@ -198,6 +239,7 @@ def create_body_backup(context, body_object):
 
 def delete_faces(context, body_object, face_indices):
     """Back up the body, delete the requested faces, and record freed UV regions."""
+    validate_body_action(context, body_object, 'DELETE')
     face_indices = tuple(sorted({int(index) for index in face_indices}))
     if not face_indices:
         raise HiddenMeshError("削除する面がありません")
@@ -267,9 +309,11 @@ def run(
     if normalized_action not in {'ANALYZE', 'SELECT', 'DELETE'}:
         raise HiddenMeshError(f"不明なactionです: {action}")
 
-    # ANALYZE is read-only, so it hands the user's active object, selection and mode back.
-    previous_state = capture_selection_state(context) if normalized_action == 'ANALYZE' else None
+    # ANALYZE and rejected actions hand the user's active object, selection and mode back.
+    previous_state = capture_selection_state(context)
+    completed = False
     try:
+        validate_body_action(context, body_object, normalized_action)
         session = AnalysisSession(
             context,
             body_object,
@@ -285,14 +329,17 @@ def run(
         for _ in session:
             pass
         analysis = session.finish()
-    finally:
-        if previous_state is not None:
-            restore_selection_state(context, previous_state)
-    result = analysis.to_dict()
-    result['action'] = normalized_action
+        result = analysis.to_dict()
+        result['action'] = normalized_action
 
-    if normalized_action == 'SELECT':
-        select_faces(context, body_object, analysis.hidden_face_indices)
-    elif normalized_action == 'DELETE':
-        result.update(delete_faces(context, body_object, analysis.hidden_face_indices))
-    return result
+        if normalized_action == 'SELECT':
+            select_faces(context, body_object, analysis.hidden_face_indices)
+        elif normalized_action == 'DELETE':
+            result.update(delete_faces(context, body_object, analysis.hidden_face_indices))
+        completed = True
+        return result
+    except ValueError as exc:
+        raise HiddenMeshError(str(exc)) from exc
+    finally:
+        if normalized_action == 'ANALYZE' or not completed:
+            restore_selection_state(context, previous_state)

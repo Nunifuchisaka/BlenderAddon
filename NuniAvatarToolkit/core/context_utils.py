@@ -41,12 +41,29 @@ def restore_selection_state(context, state):
         bpy.ops.object.mode_set(mode=state['mode'])
 
 
-def object_usability_error(context, obj, label, require_editable=False, require_visible=False):
+def object_usability_error(
+    context, obj, label, require_editable=False, require_visible=False,
+    require_single_user=False,
+):
     """Return a Japanese error message when obj cannot be used in the current view layer, else None."""
+    if obj is None:
+        return f"有効な{label}を指定してください"
     if not any(candidate == obj for candidate in context.view_layer.objects):
         return f"{label}「{obj.name}」が現在のビューレイヤーにありません(別シーンや除外されたコレクションにある可能性があります)"
-    if require_editable and (obj.library is not None or (obj.data is not None and obj.data.library is not None)):
-        return f"{label}「{obj.name}」はリンクされているため変更できません"
+    data = getattr(obj, 'data', None)
+    if require_editable:
+        ids = [item for item in (obj, data) if item is not None]
+        if any(item.library is not None for item in ids):
+            return f"{label}「{obj.name}」はリンクされているため変更できません(先にデータをローカル化してください)"
+        if any(getattr(item, 'override_library', None) is not None for item in ids):
+            return f"{label}「{obj.name}」はライブラリオーバーライドのため変更できません(先にデータをローカル化してください)"
+        if any(not getattr(item, 'is_editable', True) for item in ids):
+            return f"{label}「{obj.name}」は編集できないデータのため変更できません"
+    # A fake user retains a datablock but is not another Object to be protected.
+    if require_single_user and data is not None:
+        real_users = data.users - int(getattr(data, 'use_fake_user', False))
+        if real_users > 1:
+            return f"{label}「{obj.name}」のメッシュは他のオブジェクトと共有されているため変更できません(先にシングルユーザー化してください)"
     if require_visible and not obj.visible_get():
         return f"{label}「{obj.name}」が非表示のため編集モードに入れません"
     return None

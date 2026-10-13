@@ -86,8 +86,17 @@ def extract_world_positions_normals(mesh, matrix_world):
     nrm = nrm.reshape(n, 3)
 
     world_co = transform_points(co, matrix_world)
+    determinant = matrix_world.to_3x3().determinant()
+    if not np.isfinite(world_co).all() or not np.isfinite(nrm).all() or not np.isfinite(determinant):
+        raise ValueError(f"メッシュ「{mesh.name}」に不正な座標・法線または変換(NaN/Inf)があります")
+    if determinant == 0.0:
+        raise ValueError(f"メッシュ「{mesh.name}」のスケールが0のため形状を判定できません")
+    try:
+        inverse = matrix_world.inverted()
+    except ValueError as exc:
+        raise ValueError(f"メッシュ「{mesh.name}」の変換を逆算できないため形状を判定できません") from exc
 
-    normal_mat = np.array(matrix_world.inverted_safe().transposed().to_3x3(), dtype=np.float64)
+    normal_mat = np.array(inverse.transposed().to_3x3(), dtype=np.float64)
     world_nrm = nrm @ normal_mat.T
     lengths = np.linalg.norm(world_nrm, axis=1, keepdims=True)
     lengths[lengths < 1e-12] = 1.0
@@ -96,8 +105,30 @@ def extract_world_positions_normals(mesh, matrix_world):
     return world_co, world_nrm
 
 
-def _get_matching_evaluated(obj, depsgraph, original_count):
+def _require_evaluated_object(obj, depsgraph):
+    """Never mistake an object outside the depsgraph for its evaluated geometry."""
+    def enabled_branch(layer):
+        if layer.exclude or layer.collection.hide_viewport:
+            return False
+        if any(candidate == obj for candidate in layer.collection.objects):
+            return True
+        return any(enabled_branch(child) for child in layer.children)
+
+    # Scene pointer properties or dependency references can retain an evaluated
+    # object after its monitor is disabled. That cache is not a valid evaluation
+    # of the active input. Eye hiding is intentionally allowed for references.
+    enabled = not obj.hide_viewport and enabled_branch(depsgraph.view_layer.layer_collection)
     eval_obj = obj.evaluated_get(depsgraph)
+    if not enabled or not eval_obj.is_evaluated:
+        raise ValueError(
+            f"メッシュ「{obj.name}」が現在のビューレイヤーで評価されていません"
+            "(コレクションの除外・ビューポートの無効化を解除してください)"
+        )
+    return eval_obj
+
+
+def _get_matching_evaluated(obj, depsgraph, original_count):
+    eval_obj = _require_evaluated_object(obj, depsgraph)
     try:
         mesh_eval = eval_obj.to_mesh()
         if len(mesh_eval.vertices) != original_count:
@@ -117,6 +148,7 @@ def snapshot_deform_only(depsgraph, obj):
     count still differs.
     Returns (positions: (V,3) float64 ndarray, normals: (V,3) float64 ndarray, used_evaluated: bool).
     """
+    _require_evaluated_object(obj, depsgraph)
     original_count = len(obj.data.vertices)
 
     if not _non_deform_modifiers(obj):
@@ -157,23 +189,35 @@ def build_bvh_from_objects(depsgraph, objects):
     aabb_max = None
 
     for obj in objects:
-        obj_eval = obj.evaluated_get(depsgraph)
+        obj_eval = _require_evaluated_object(obj, depsgraph)
         try:
             mesh_eval = obj_eval.to_mesh()
-            mesh_eval.calc_loop_triangles()
             n = len(mesh_eval.vertices)
-            if n == 0 or len(mesh_eval.loop_triangles) == 0:
+            if n == 0:
                 continue
 
             co = np.empty(n * 3, dtype=np.float64)
             mesh_eval.vertices.foreach_get('co', co)
             co = co.reshape(n, 3)
             world_co = transform_points(co, obj_eval.matrix_world)
+            determinant = obj_eval.matrix_world.to_3x3().determinant()
+            if not np.isfinite(world_co).all() or not np.isfinite(determinant):
+                raise ValueError(f"メッシュ「{obj.name}」に不正な座標または変換(NaN/Inf)があります")
+            if determinant == 0.0:
+                raise ValueError(f"メッシュ「{obj.name}」のスケールが0のため形状を判定できません")
+
+            mesh_eval.calc_loop_triangles()
+            if len(mesh_eval.loop_triangles) == 0:
+                continue
 
             t = len(mesh_eval.loop_triangles)
             tri_idx = np.empty(t * 3, dtype=np.int64)
             mesh_eval.loop_triangles.foreach_get('vertices', tri_idx)
             tri_idx = tri_idx.reshape(t, 3) + offset
+            if determinant < 0.0:
+                # BVHTree derives normals from world-space triangle winding. A
+                # reflection reverses winding; preserve the original exterior.
+                tri_idx = tri_idx[:, ::-1]
 
             verts.extend(world_co.tolist())
             tris.extend(tuple(tri) for tri in tri_idx.tolist())

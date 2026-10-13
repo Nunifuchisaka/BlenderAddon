@@ -1,5 +1,6 @@
 import bpy
 
+from ...core.context_utils import object_usability_error
 from ...core.report import set_report_lines
 from . import utils
 
@@ -28,11 +29,19 @@ class OBJECT_OT_amt_align_armature(bpy.types.Operator):
             self.report({'ERROR'}, "ボーンを指定してください")
             return {'CANCELLED'}
 
-        if target_object.library is not None or target_object.override_library is not None:
+        for obj, label in ((reference_object, "基準Armature"), (target_object, "対象Armature")):
+            error = object_usability_error(context, obj, label)
+            if error:
+                self.report({'ERROR'}, error)
+                return {'CANCELLED'}
+
+        if (target_object.library is not None or target_object.override_library is not None
+                or not target_object.is_editable):
             self.report({'ERROR'}, "対象Armatureはリンクされているため移動できません")
             return {'CANCELLED'}
 
         try:
+            context.view_layer.update()
             delta = utils.compute_alignment_delta(
                 reference_object, props.reference_bone, target_object, props.target_bone,
             )
@@ -45,20 +54,24 @@ class OBJECT_OT_amt_align_armature(bpy.types.Operator):
             self.report({'INFO'}, "既に一致しています")
             return {'FINISHED'}
 
-        # Constraints, drivers or animation can override the new transform, so re-measure after
-        # the depsgraph update and roll back if the bones did not actually line up.
-        previous_basis = target_object.matrix_basis.copy()
-        utils.apply_alignment(target_object, delta)
-        context.view_layer.update()
-        remaining = utils.compute_alignment_delta(
-            reference_object, props.reference_bone, target_object, props.target_bone,
-        )
-        if remaining.length > 1e-4:
-            target_object.matrix_basis = previous_basis
+        # Preserve raw channels: restoring matrix_basis can decompose rotation/scale differently.
+        previous_channels = utils.capture_transform_channels(target_object)
+        previous_linear = target_object.matrix_world.to_3x3().copy()
+        try:
+            utils.apply_alignment(target_object, delta)
+            context.view_layer.update()
+            remaining = utils.compute_alignment_delta(
+                reference_object, props.reference_bone, target_object, props.target_bone,
+            )
+            if (remaining.length > 1e-4
+                    or not utils.preserves_rotation_scale(target_object, previous_channels, previous_linear)):
+                raise ValueError("位置・回転・スケールを保持した平行移動ができません")
+        except (ValueError, RuntimeError) as exc:
+            utils.restore_transform_channels(target_object, previous_channels)
             context.view_layer.update()
             message = (
-                "移動後もボーン位置が一致しなかったため元に戻しました"
-                "(コンストレイント・ドライバー・アニメーションが位置を上書きしている可能性があります)"
+                "安全に位置を合わせられなかったため元に戻しました"
+                f"({exc}。コンストレイント・ドライバー・親の変換を確認してください)"
             )
             set_report_lines(props.report_lines, [('ERROR', message)])
             self.report({'ERROR'}, message)

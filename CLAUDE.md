@@ -8,12 +8,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## ビルド・配布・テスト
 
-- **配布ZIP**: `powershell -ExecutionPolicy Bypass -File tools/build-release.ps1` でリポジトリ直下に `NuniAvatarToolkit-<版数>.zip` を作る。版数は `bl_info["version"]` から読み、`__pycache__`・`*.pyc`・休止中の `features/texture_bake/` は除外する（ZIP内のトップは `NuniAvatarToolkit/`）。
+- **配布ZIP**: `powershell -ExecutionPolicy Bypass -File tools/build-release.ps1` でリポジトリ直下に `NuniAvatarToolkit-<版数>.zip` を作る。PowerShell 7では `pwsh -File tools/build-release.ps1 -OutputDirectory <出力先>` も使用可。版数は `bl_info["version"]` から読み、`__pycache__`・`*.pyc`・休止中の `features/texture_bake/` は除外し、ルートのLICENSEを同梱する（ZIP内のトップは `NuniAvatarToolkit/`）。
 - **unittest（Blender外で実行可）**: `cd tests && python -m unittest test_safety_utils test_bone_follow_utils`。各 feature の `utils.py` を単体ロードしてテストするため、`utils.py` から `core` などを相対 import しないこと。
-- **スモークテスト（Blender背景モード）**: `"C:/Program Files/Blender Foundation/Blender 5.2/blender.exe" --background --factory-startup --python tests/<名前>.py` で以下の3本を実行する。
+- **スモークテスト（Blender背景モード）**: `blender --background --factory-startup --python-exit-code 1 --python tests/<名前>.py` で以下の4本を実行する。Windowsでは実行ファイルのフルパスを指定する。
   - `blender_hidden_mesh_smoke.py`（成功時に `BLENDER_HIDDEN_MESH_SMOKE_OK` を出力）
   - `blender_bone_follow_smoke.py`（同 `... smoke test passed`）
   - `blender_review_fixes_smoke.py`（同 `BLENDER_REVIEW_FIXES_SMOKE_OK`）
+  - `blender_review_rest_smoke.py`（同 `BLENDER_REVIEW_REST_SMOKE_OK`）
+- **リリース安全性の回帰テスト**: 同じコマンドで `blender_core_release_safety.py`、`blender_hidden_release_safety.py`、`blender_cleanup_release_safety.py`、`blender_cloth_release_safety.py`、`blender_bone_release_safety.py`、`blender_texture_diagnostics_release_safety.py`、`blender_release_lifecycle_smoke.py` の7本を実行する。4.2.0・4.3.2・5.2.0のLinux版で確認済み。最後のテストは一時ディレクトリを使いZIP導入・更新・登録解除を検証する。
 - lint は無い。UIの見た目などテストで確かめられない部分は、Blender実機でアドオンを再読み込み（無効化→有効化、または再起動）して確認する（`bpy` はエディタ外で import 不可）。
 - `bl_info["version"]` と `CHANGELOG.md` は機能追加時に手動で揃える。
 

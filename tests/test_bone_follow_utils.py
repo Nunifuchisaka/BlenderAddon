@@ -22,7 +22,10 @@ def make_object(name, object_type='MESH', parent_type='OBJECT'):
     parent_type=parent_type,
     library=None,
     override_library=None,
-    data=types.SimpleNamespace(vertices=[object()]),
+    is_editable=True,
+    data=types.SimpleNamespace(
+      vertices=[object()], library=None, override_library=None, is_editable=True, users=1,
+    ),
   )
 
 
@@ -101,6 +104,64 @@ class BoneWeightTests(unittest.TestCase):
     target = make_object('Accessory')
     target.modifiers = [types.SimpleNamespace(type='ARMATURE', object=armature)]
 
+    self.utils.validate_weight_setup(target, armature, 'Head')
+
+  def test_rejects_shared_mesh_data_before_weight_assignment(self):
+    target = make_object('Accessory')
+    target.data.users = 2
+    armature = make_object('Armature', 'ARMATURE')
+    armature.data = types.SimpleNamespace(bones={'Head': object()})
+    with self.assertRaisesRegex(ValueError, '共有'):
+      self.utils.validate_weight_setup(target, armature, 'Head', allow_edit_mode=True)
+
+  def test_accepts_single_object_mesh_with_fake_user(self):
+    target = make_object('Accessory')
+    target.data.users = 2
+    target.data.use_fake_user = True
+    armature = make_object('Armature', 'ARMATURE')
+    armature.data = types.SimpleNamespace(bones={'Head': object()})
+    self.utils.validate_weight_setup(target, armature, 'Head')
+
+  def test_rejects_local_object_using_linked_mesh_data(self):
+    target = make_object('Accessory')
+    target.data.library = object()
+    armature = make_object('Armature', 'ARMATURE')
+    armature.data = types.SimpleNamespace(bones={'Head': object()})
+    with self.assertRaisesRegex(ValueError, 'リンク'):
+      self.utils.validate_weight_setup(target, armature, 'Head')
+
+  def test_rejects_readonly_object_and_mesh(self):
+    armature = make_object('Armature', 'ARMATURE')
+    armature.data = types.SimpleNamespace(bones={'Head': object()})
+    for owner in ('object', 'mesh'):
+      target = make_object('Accessory')
+      (target if owner == 'object' else target.data).is_editable = False
+      with self.subTest(owner=owner), self.assertRaisesRegex(ValueError, 'リンク'):
+        self.utils.validate_weight_setup(target, armature, 'Head')
+
+  def test_rejects_mesh_library_override(self):
+    target = make_object('Accessory')
+    target.data.override_library = object()
+    armature = make_object('Armature', 'ARMATURE')
+    armature.data = types.SimpleNamespace(bones={'Head': object()})
+    with self.assertRaisesRegex(ValueError, 'リンク'):
+      self.utils.validate_weight_setup(target, armature, 'Head')
+
+  def test_rejects_non_deforming_bone(self):
+    target = make_object('Accessory')
+    armature = make_object('Armature', 'ARMATURE')
+    armature.data = types.SimpleNamespace(bones={'Head': types.SimpleNamespace(use_deform=False)})
+    with self.assertRaisesRegex(ValueError, '変形が無効'):
+      self.utils.validate_weight_setup(target, armature, 'Head')
+
+  def test_accepts_same_rig_source_modifier_stack_for_later_join(self):
+    target = make_object('Accessory')
+    armature = make_object('Armature', 'ARMATURE')
+    armature.data = types.SimpleNamespace(bones={'Head': object()})
+    target.modifiers = [
+      types.SimpleNamespace(type='ARMATURE', object=armature, use_vertex_groups=False),
+      types.SimpleNamespace(type='ARMATURE', object=armature, use_vertex_groups=True),
+    ]
     self.utils.validate_weight_setup(target, armature, 'Head')
 
 

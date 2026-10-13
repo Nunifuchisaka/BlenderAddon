@@ -286,7 +286,7 @@ def test_cloth_fit_reused_key_relative_to_other_key():
   assert worst < 1e-5, worst
 
 
-def test_cloth_fit_absolute_keys_ignore_relative_key():
+def test_cloth_fit_rejects_absolute_keys_without_changes():
   cloth = _setup_cloth_fit()
   assert bpy.ops.object.amt_cloth_fit('EXEC_DEFAULT') == {'FINISHED'}
   first = _fit_coordinates(cloth, "AMT_Fit")
@@ -296,9 +296,12 @@ def test_cloth_fit_absolute_keys_ignore_relative_key():
     point.co.x += 0.3
   cloth.data.shape_keys.key_blocks["AMT_Fit"].relative_key = parent
   cloth.data.shape_keys.use_relative = False
+  evaluation_time = cloth.data.shape_keys.eval_time
 
-  assert bpy.ops.object.amt_cloth_fit('EXEC_DEFAULT') == {'FINISHED'}
+  assert_cancelled("絶対シェイプキー", bpy.ops.object.amt_cloth_fit, 'EXEC_DEFAULT')
   assert _fit_coordinates(cloth, "AMT_Fit") == first
+  assert not cloth.data.shape_keys.use_relative
+  assert cloth.data.shape_keys.eval_time == evaluation_time
 
 
 def test_hidden_mesh_analyze_restores_context():
@@ -338,7 +341,7 @@ TESTS = (
   test_cloth_fit_rerun_keeps_key_settings,
   test_cloth_fit_rejects_basis_name_without_shape_keys,
   test_cloth_fit_reused_key_relative_to_other_key,
-  test_cloth_fit_absolute_keys_ignore_relative_key,
+    test_cloth_fit_rejects_absolute_keys_without_changes,
   test_hidden_mesh_analyze_restores_context,
 )
 

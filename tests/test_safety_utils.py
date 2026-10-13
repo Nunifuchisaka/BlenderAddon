@@ -3,6 +3,7 @@ import sys
 import tempfile
 import types
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -119,6 +120,10 @@ class TextureRelinkSafetyTests(unittest.TestCase):
   def setUpClass(cls):
     bpy = types.ModuleType('bpy')
     bpy.path = types.SimpleNamespace(abspath=lambda path, library=None: path)
+    bpy.data = types.SimpleNamespace(images=types.SimpleNamespace(
+      load=mock.Mock(return_value=types.SimpleNamespace(size=(2, 2), has_data=True)),
+      remove=mock.Mock(),
+    ))
     cls.utils = load_module(
       'texture_relink_utils_for_test',
       'NuniAvatarToolkit/features/texture_relink/utils.py',
@@ -146,6 +151,7 @@ class TextureRelinkSafetyTests(unittest.TestCase):
     values = dict(
       name=name, source='FILE', packed_file=None, library=None,
       filepath=str(Path(directory, 'missing', name)), reload=lambda: None,
+      size=(2, 2), has_data=True,
     )
     values.update(extra)
     return types.SimpleNamespace(**values)
@@ -183,6 +189,32 @@ class TextureRelinkSafetyTests(unittest.TestCase):
     with tempfile.TemporaryDirectory() as directory:
       Path(directory, 'Skin.webp').touch()
       self.assertEqual(len(self.utils.find_candidate_files(directory)), 1)
+
+  def test_decoder_failure_does_not_touch_original_and_removes_probe(self):
+    undecoded = types.SimpleNamespace(size=(0, 0), has_data=False)
+    with tempfile.TemporaryDirectory() as directory:
+      Path(directory, 'Broken.png').touch()
+      image = self._missing_image(directory, 'Broken.png', reload=mock.Mock())
+      old_path = image.filepath
+      with mock.patch.object(self.utils.bpy.data.images, 'load', return_value=undecoded) as load:
+        with mock.patch.object(self.utils.bpy.data.images, 'remove') as remove:
+          result = self.utils.relink_missing_textures([image], directory)
+    self.assertEqual(image.filepath, old_path)
+    image.reload.assert_not_called()
+    self.assertEqual(result['relinked'], [])
+    self.assertEqual([entry[0] for entry in result['failed']], [image])
+    load.assert_called_once_with(str(Path(directory, 'Broken.png')), check_existing=False)
+    remove.assert_called_once_with(undecoded)
+
+  def test_reload_without_exception_but_without_pixels_is_rolled_back(self):
+    with tempfile.TemporaryDirectory() as directory:
+      Path(directory, 'Broken.png').touch()
+      image = self._missing_image(directory, 'Broken.png', size=(0, 0), has_data=False)
+      old_path = image.filepath
+      result = self.utils.relink_missing_textures([image], directory)
+    self.assertEqual(image.filepath, old_path)
+    self.assertEqual(result['relinked'], [])
+    self.assertEqual([entry[0] for entry in result['failed']], [image])
 
 
 class DiagnosticsRotationTests(unittest.TestCase):

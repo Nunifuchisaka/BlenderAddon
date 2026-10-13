@@ -35,8 +35,21 @@ def validate_weight_setup(target_object, armature_object, bone_name, allow_edit_
         raise ValueError("ボーンを指定してください")
     if bone_name not in armature_object.data.bones:
         raise ValueError(f"ボーン「{bone_name}」が見つかりません")
-    if target_object.library is not None or target_object.override_library is not None:
+    if not getattr(armature_object.data.bones[bone_name], 'use_deform', True):
+        raise ValueError(
+            f"ボーン「{bone_name}」は変形が無効です。変形するボーンを指定してください"
+        )
+    mesh = target_object.data
+    if (target_object.library is not None or target_object.override_library is not None
+            or getattr(mesh, 'library', None) is not None
+            or getattr(mesh, 'override_library', None) is not None
+            or not getattr(target_object, 'is_editable', True)
+            or not getattr(mesh, 'is_editable', True)):
         raise ValueError("対象メッシュはリンクされているためウェイトを変更できません")
+    if getattr(mesh, 'users', 1) - int(getattr(mesh, 'use_fake_user', False)) > 1:
+        raise ValueError(
+            "対象メッシュのデータが共有されています。シングルユーザー化してから実行してください"
+        )
     if target_object.parent_type == 'BONE':
         raise ValueError(
             "対象メッシュはBone Parentされています。二重追従を防ぐため、先に親子関係を解除してください"

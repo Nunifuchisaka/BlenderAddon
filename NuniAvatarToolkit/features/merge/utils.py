@@ -1,6 +1,13 @@
 """Pure pre-flight analysis for the merge feature. No bpy.types here."""
 
 
+def material_slot_remapping_blockers(obj):
+    """Modifiers with procedural/material-index assignments that need an applied mesh."""
+    unsafe_types = {'SOLIDIFY', 'BEVEL', 'WIREFRAME', 'NODES', 'BOOLEAN', 'PARTICLE_SYSTEM',
+                    'MESH_SEQUENCE_CACHE', 'OCEAN'}
+    return [mod.name for mod in obj.modifiers if mod.type in unsafe_types]
+
+
 def analyze_join_candidates(selected_objects, active_object):
     """Returns a list of (level, text) issues to show the user before joining meshes into active_object."""
     mesh_objs = [o for o in selected_objects if o.type == 'MESH']

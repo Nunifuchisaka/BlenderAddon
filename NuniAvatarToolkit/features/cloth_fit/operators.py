@@ -1,7 +1,9 @@
 import bpy
 import numpy as np
 
-from ...core.context_utils import reset_to_object_mode_with_active
+from ...core.context_utils import (
+    capture_selection_state, object_usability_error, reset_to_object_mode_with_active, restore_selection_state,
+)
 from ...core.mesh_eval import build_bvh_from_objects, transform_points
 from ...core.report import set_report_lines
 from . import utils
@@ -29,6 +31,39 @@ def _get_or_create_shape_key(obj, name):
     if existing is not None:
         return existing
     return obj.shape_key_add(name=name, from_mix=False)
+
+
+def _write_fit_shape_key(obj, name, fitted_local):
+    """Commit the already computed result, rolling back even a partially created key."""
+    shape_keys = obj.data.shape_keys
+    previous_names = set(shape_keys.key_blocks.keys()) if shape_keys is not None else set()
+    existing = _find_shape_key(obj, name)
+    previous_coordinates = None
+    previous_value = existing.value if existing is not None else None
+    if existing is not None:
+        previous_coordinates = np.empty(len(existing.data) * 3, dtype=np.float32)
+        existing.data.foreach_get('co', previous_coordinates)
+    previous_active = obj.active_shape_key_index
+    previous_show_only = obj.show_only_shape_key
+    try:
+        key_block = _get_or_create_shape_key(obj, name)
+        key_block.data.foreach_set('co', np.ascontiguousarray(fitted_local, dtype=np.float32).ravel())
+        key_block.value = 1.0
+        obj.active_shape_key_index = obj.data.shape_keys.key_blocks.find(key_block.name)
+        obj.show_only_shape_key = False
+        obj.data.update()
+    except Exception:
+        if existing is not None:
+            existing.data.foreach_set('co', previous_coordinates)
+            existing.value = previous_value
+        if obj.data.shape_keys is not None:
+            for key_block in reversed(list(obj.data.shape_keys.key_blocks)):
+                if key_block.name not in previous_names:
+                    obj.shape_key_remove(key_block)
+        obj.active_shape_key_index = previous_active
+        obj.show_only_shape_key = previous_show_only
+        obj.data.update()
+        raise
 
 
 class OBJECT_OT_amt_cloth_fit(bpy.types.Operator):
@@ -69,13 +104,22 @@ class OBJECT_OT_amt_cloth_fit(bpy.types.Operator):
         shape_key_name = props.shape_key_name.strip()
 
         try:
-            utils.validate_fit_setup(body_object, clothing_object, props.vertex_group)
+            # Read edit-mode geometry only after the context has been synchronized below.
+            utils.validate_fit_setup(body_object, clothing_object, props.vertex_group, require_vertices=False)
         except ValueError as exc:
             self.report({'ERROR'}, str(exc))
             return {'CANCELLED'}
 
         if not shape_key_name:
             self.report({'ERROR'}, "シェイプキー名を入力してください")
+            return {'CANCELLED'}
+
+        error = object_usability_error(context, body_object, "ボディメッシュ")
+        error = error or object_usability_error(
+            context, clothing_object, "服メッシュ", require_editable=True, require_visible=True, require_single_user=True,
+        )
+        if error:
+            self.report({'ERROR'}, error)
             return {'CANCELLED'}
 
         existing_key = _find_shape_key(clothing_object, shape_key_name)
@@ -87,28 +131,56 @@ class OBJECT_OT_amt_cloth_fit(bpy.types.Operator):
         if would_be_reference:
             self.report({'ERROR'}, f"「{shape_key_name}」はベースのシェイプキーのため上書きできません")
             return {'CANCELLED'}
-
-        weights = utils.get_vertex_group_weights(clothing_object, props.vertex_group)
-        target_count = int(np.count_nonzero(weights > 0.0))
-        if target_count == 0:
-            self.report({'ERROR'}, f"頂点グループ「{props.vertex_group}」に頂点が登録されていません")
+        if existing_key is not None and existing_key.relative_key == existing_key:
+            self.report(
+                {'ERROR'},
+                f"シェイプキー「{shape_key_name}」が自身を相対キーに指定しているため変形が反映されません。"
+                "相対キーをベースなど別のキーに設定してから実行してください",
+            )
+            return {'CANCELLED'}
+        if existing_key is not None and existing_key.mute:
+            self.report(
+                {'ERROR'},
+                f"シェイプキー「{shape_key_name}」はミュートされているため変形が反映されません。"
+                "ミュートを解除するか、別のシェイプキー名で実行してください",
+            )
+            return {'CANCELLED'}
+        if existing_key is not None and not existing_key.slider_min <= 1.0 <= existing_key.slider_max:
+            self.report(
+                {'ERROR'},
+                f"シェイプキー「{shape_key_name}」のスライダー範囲"
+                f"({existing_key.slider_min:g} ～ {existing_key.slider_max:g})には値1.0が含まれていません。"
+                "範囲を変更するか、別のシェイプキー名で実行してください",
+            )
             return {'CANCELLED'}
 
-        reset_to_object_mode_with_active(context, clothing_object)
-
-        switched_armatures = utils.force_rest_pose((body_object, clothing_object))
+        previous_state = capture_selection_state(context)
+        switched_armatures = []
+        finished = False
         try:
+            reset_to_object_mode_with_active(context, clothing_object)
+            utils.validate_fit_setup(body_object, clothing_object, props.vertex_group)
+            weights = utils.get_vertex_group_weights(clothing_object, props.vertex_group)
+            target_count = int(np.count_nonzero(weights > 0.0))
+            if target_count == 0:
+                raise ValueError(f"頂点グループ「{props.vertex_group}」に頂点が登録されていません")
+
+            switched_armatures = utils.force_rest_pose((body_object, clothing_object))
             if switched_armatures:
                 context.view_layer.update()
 
             depsgraph = context.evaluated_depsgraph_get()
             bvh, _aabb_min, _aabb_max = build_bvh_from_objects(depsgraph, [body_object])
             if bvh is None:
-                self.report({'ERROR'}, "ボディメッシュに面がありません")
-                return {'CANCELLED'}
+                raise ValueError("ボディメッシュに面がありません")
 
-            key_block = _get_or_create_shape_key(clothing_object, shape_key_name)
             matrix_world = clothing_object.matrix_world.copy()
+            if not np.isfinite(np.array(matrix_world, dtype=np.float64)).all():
+                raise ValueError("服メッシュの変換に無効な数値があります。位置・回転・スケールを確認してください")
+            try:
+                inverse_world = matrix_world.inverted()
+            except ValueError as exc:
+                raise ValueError("服メッシュのスケールが0のためフィットできません。親オブジェクトのスケールも確認してください") from exc
 
             # Start from the base mesh, never from a previous fit stored in a reused key.
             vertex_count = len(clothing_object.data.vertices)
@@ -122,31 +194,31 @@ class OBJECT_OT_amt_cloth_fit(bpy.types.Operator):
                 world_co, weights, bvh, props.offset, props.max_search_distance,
             )
 
-            fitted_local = transform_points(fitted_world, matrix_world.inverted_safe())
+            fitted_local = transform_points(fitted_world, inverse_world)
             # A reused key may be relative to another key; Blender applies (key - relative_key),
             # so offset by that key to keep the same deformation as a Basis-relative key.
             shape_keys = clothing_object.data.shape_keys
-            relative_key = key_block.relative_key
+            existing_key = _find_shape_key(clothing_object, shape_key_name)
+            relative_key = existing_key.relative_key if existing_key is not None else None
             if (
-                shape_keys.use_relative and relative_key is not None
-                and relative_key != shape_keys.reference_key and relative_key != key_block
+                relative_key is not None
+                and relative_key != shape_keys.reference_key and relative_key != existing_key
             ):
                 relative_co = np.empty(vertex_count * 3, dtype=np.float64)
                 relative_key.data.foreach_get('co', relative_co)
                 fitted_local = fitted_local + (relative_co.reshape(vertex_count, 3) - local_co)
-            # float32 matches the shape key's own storage, so foreach_set takes the fast buffer path.
-            key_block.data.foreach_set('co', np.ascontiguousarray(fitted_local, dtype=np.float32).ravel())
-
-            key_block.value = 1.0
-            clothing_object.active_shape_key_index = (
-                clothing_object.data.shape_keys.key_blocks.find(shape_key_name)
-            )
-            clothing_object.show_only_shape_key = False
-            clothing_object.data.update()
+            # Shape keys are mutated only after evaluation and the full fit computation succeed.
+            _write_fit_shape_key(clothing_object, shape_key_name, fitted_local)
+            finished = True
+        except Exception as exc:
+            self.report({'ERROR'}, f"服メッシュのフィットに失敗しました: {exc}")
+            return {'CANCELLED'}
         finally:
             if switched_armatures:
                 utils.restore_pose_positions(switched_armatures)
                 context.view_layer.update()
+            if not finished:
+                restore_selection_state(context, previous_state)
 
         moved_count = int(np.count_nonzero(moved_mask))
         lines = [

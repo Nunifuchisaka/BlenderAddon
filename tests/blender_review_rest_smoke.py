@@ -188,7 +188,7 @@ def test_merge_join_rejects_linked_meshes():
   linked = link_from_library("LinkedPart", lambda: make_sphere("LinkedPart", 0.5))
   local = make_sphere("Local", 1.0)
   make_active(local, linked)
-  assert_cancelled("編集できない", bpy.ops.object.amt_merge_join, 'EXEC_DEFAULT')
+  assert_cancelled("リンク", bpy.ops.object.amt_merge_join, 'EXEC_DEFAULT')
   assert "LinkedPart" in bpy.context.scene.objects
 
 

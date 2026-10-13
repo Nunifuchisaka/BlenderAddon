@@ -18,7 +18,7 @@ class AMT_CleanupProperties(bpy.types.PropertyGroup):
     )
     remove_noop_shape_keys: bpy.props.BoolProperty(
         name="無効なシェイプキー",
-        description="ベース(Basis)からの頂点移動量が「無効判定のしきい値」未満のシェイプキーを削除します",
+        description="相対キーからの頂点移動量がしきい値未満で、他のキーやドライバーが参照していないシェイプキーを削除します",
         default=True,
     )
     shape_key_noop_threshold: bpy.props.FloatProperty(
@@ -38,7 +38,7 @@ class AMT_CleanupProperties(bpy.types.PropertyGroup):
     )
     remove_unused_material_slots: bpy.props.BoolProperty(
         name="未使用のマテリアルスロット",
-        description="どの面にも割り当てられていないマテリアルスロットを削除します",
+        description="どの面にも割り当てられていないマテリアルスロットを削除します。素材番号に依存するモディファイアがある場合は変更前に中止します",
         default=True,
     )
     remove_loose_geometry: bpy.props.BoolProperty(

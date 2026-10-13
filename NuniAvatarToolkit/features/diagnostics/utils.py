@@ -65,9 +65,12 @@ def count_triangles(mesh_objects, depsgraph):
     return total
 
 
-def count_material_slots(mesh_objects):
+def count_material_slots(mesh_objects, depsgraph=None):
     """Total material slots over all meshes; VRChat counts a material used in 20 slots as 20."""
-    return sum(len(obj.material_slots) for obj in mesh_objects)
+    return sum(
+        len((obj.evaluated_get(depsgraph) if depsgraph is not None else obj).material_slots)
+        for obj in mesh_objects
+    )
 
 
 def count_bones(armature_objects):
@@ -96,17 +99,17 @@ def find_non_finite_vertices(obj):
 
 
 def find_non_finite_shape_keys(obj):
-    """[(shape_key_name, vertex_count), ...] for non-reference shape keys holding NaN/Inf coordinates.
+    """[(shape_key_name, vertex_count), ...] for all keys holding NaN/Inf coordinates.
 
-    The reference (Basis) key mirrors the mesh vertices, which find_non_finite_vertices already checks.
+    Basis can differ from the raw mesh after imports or other add-ons edit the key data.
     """
     shape_keys = obj.data.shape_keys
     n = len(obj.data.vertices)
     if not shape_keys or n == 0:
         return []
     results = []
-    for key_block in list(shape_keys.key_blocks)[1:]:
-        count = _count_non_finite(key_block.data, n)
+    for key_block in shape_keys.key_blocks:
+        count = _count_non_finite(key_block.data, len(key_block.data))
         if count:
             results.append((key_block.name, count))
     return results
@@ -189,18 +192,40 @@ def find_layer_collection(layer_collection, target):
 def find_excluded_or_hidden_branches(collection, layer_collection_root):
     """Topmost excluded / render-hidden collections that still hold objects.
 
-    Returns (path, collection, reason) per branch; descendants of a hit are pruned so a
-    nested excluded structure only reports once. A collection missing from the current
-    view layer cannot be checked for ``exclude``, so it falls back to ``hide_render``
-    alone (judging "no problem" rather than risking a false positive).
+    Include the target root and restrictions inherited from its ancestors. A shared
+    collection remains available when at least one of its paths within the target is
+    available. Descendants of a reported branch are pruned to avoid duplicate warnings.
     """
+    if collection is None:
+        return []
+
+    layer_states = {}
+
+    def visit(layer, excluded=False, hidden=False, within_target=False):
+        excluded = excluded or layer.exclude
+        hidden = hidden or layer.collection.hide_render
+        within_target = within_target or layer.collection == collection
+        if within_target:
+            layer_states.setdefault(layer.collection, []).append((excluded, hidden))
+        for child in layer.children:
+            visit(child, excluded, hidden, within_target)
+
+    if layer_collection_root is not None:
+        visit(layer_collection_root)
+
     def reason_of(child):
-        layer = find_layer_collection(layer_collection_root, child)
-        if layer is not None and layer.exclude:
+        states = layer_states.get(child, [])
+        if states and all(excluded for excluded, _hidden in states):
             return "除外"
         if child.hide_render:
             return "非表示"
+        if states and all(excluded or hidden for excluded, hidden in states):
+            return "非表示"
         return None
+
+    root_reason = reason_of(collection)
+    if root_reason is not None:
+        return [(collection.name, collection, root_reason)] if collection.all_objects else []
 
     results = []
     for child, path in walk_collection_tree(collection, prune=lambda c, p: reason_of(c) is not None):

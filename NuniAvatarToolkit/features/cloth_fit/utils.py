@@ -4,7 +4,14 @@ import numpy as np
 from mathutils import Vector
 
 
-def validate_fit_setup(body_object, clothing_object, vertex_group_name):
+_SAFE_CLOTHING_MODIFIERS = frozenset({
+    'ARMATURE', 'COLLISION', 'DATA_TRANSFER', 'NORMAL_EDIT', 'WEIGHTED_NORMAL',
+    'UV_PROJECT', 'UV_WARP', 'VERTEX_WEIGHT_EDIT', 'VERTEX_WEIGHT_MIX',
+    'VERTEX_WEIGHT_PROXIMITY',
+})
+
+
+def validate_fit_setup(body_object, clothing_object, vertex_group_name, *, require_vertices=True):
     if body_object is None:
         raise ValueError("ボディメッシュを指定してください")
     if body_object.type != 'MESH':
@@ -15,14 +22,25 @@ def validate_fit_setup(body_object, clothing_object, vertex_group_name):
         raise ValueError("服メッシュにはメッシュオブジェクトを指定してください")
     if body_object == clothing_object:
         raise ValueError("ボディメッシュと服メッシュに同じオブジェクトが指定されています")
-    if clothing_object.library is not None or clothing_object.override_library is not None:
-        raise ValueError("服メッシュはリンクされているため変更できません")
-    if len(clothing_object.data.vertices) == 0:
+    if (
+        clothing_object.library is not None or clothing_object.override_library is not None
+        or clothing_object.data.library is not None or clothing_object.data.override_library is not None
+    ):
+        raise ValueError("服メッシュまたはそのデータはリンク・オーバーライドされているため変更できません。先にデータをローカル化してください")
+    if require_vertices and len(clothing_object.data.vertices) == 0:
         raise ValueError("服メッシュに頂点がありません")
+    if clothing_object.data.shape_keys is not None and not clothing_object.data.shape_keys.use_relative:
+        raise ValueError("服メッシュの絶対シェイプキーには対応していません。相対シェイプキーの服を使用してください")
     if not vertex_group_name:
         raise ValueError("対象頂点グループを指定してください")
     if vertex_group_name not in clothing_object.vertex_groups:
         raise ValueError(f"頂点グループ「{vertex_group_name}」が服メッシュに見つかりません")
+    for modifier in clothing_object.modifiers:
+        if modifier.show_viewport and modifier.type not in _SAFE_CLOTHING_MODIFIERS:
+            raise ValueError(
+                f"服メッシュのモディファイア「{modifier.name}」({modifier.type})には対応していません。"
+                "表示を無効にして結果を確認するか、複製した服で適用してから実行してください"
+            )
 
 
 def get_vertex_group_weights(obj, group_name):
@@ -68,10 +86,15 @@ def force_rest_pose(objects):
     into the shape key, so the pose is suspended for the duration of the computation.
     """
     switched = []
-    for armature in collect_driving_armatures(objects):
-        if armature.data.pose_position != 'REST':
-            switched.append((armature, armature.data.pose_position))
-            armature.data.pose_position = 'REST'
+    try:
+        for armature in collect_driving_armatures(objects):
+            if armature.data.pose_position != 'REST':
+                previous = armature.data.pose_position
+                armature.data.pose_position = 'REST'
+                switched.append((armature, previous))
+    except Exception:
+        restore_pose_positions(switched)
+        raise
     return switched
 
 
@@ -86,6 +109,8 @@ def compute_fitted_positions(world_co, weights, bvh, offset, max_distance):
     Vertices already outside the body are left untouched so the garment silhouette is kept.
     Returns (fitted_world_co: (V,3) float64, moved_mask: (V,) bool, max_move: float).
     """
+    if len(weights) != len(world_co):
+        raise ValueError("服メッシュの頂点数とウェイト数が一致しません。編集モードを終了して再実行してください")
     fitted = world_co.copy()
     moved = np.zeros(len(world_co), dtype=bool)
     max_move = 0.0

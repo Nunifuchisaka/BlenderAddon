@@ -43,7 +43,7 @@ class OBJECT_OT_amt_relink_textures(bpy.types.Operator):
         for image in result['linked']:
             lines.append(('WARNING', f"{image.name}: リンクされた画像のため変更できません(リンク元のファイルで再リンクしてください)"))
         for image, error in result['failed']:
-            lines.append(('ERROR', f"{image.name}: 再リンクに失敗したため元のパスに戻しました({error})"))
+            lines.append(('ERROR', f"{image.name}: 再リンクに失敗しました({error})"))
 
         set_report_lines(props.report_lines, lines)
         self.report(

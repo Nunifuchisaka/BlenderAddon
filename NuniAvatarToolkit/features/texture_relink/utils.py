@@ -100,6 +100,25 @@ def find_best_matches(image_name, candidates):
     return best_level, best_matches
 
 
+def _require_decoded_image(image, path):
+    # Image.reload() can only log a decoder error without raising an exception.
+    # Reading size forces Blender's lazy image load before checking the result.
+    width, height = image.size
+    if width <= 0 or height <= 0 or not image.has_data:
+        raise RuntimeError(f"画像を読み込めません: {path}")
+
+
+def _validate_candidate_image(path):
+    """Decode into a temporary datablock without changing the user's image/cache."""
+    candidate = None
+    try:
+        candidate = bpy.data.images.load(path, check_existing=False)
+        _require_decoded_image(candidate, path)
+    finally:
+        if candidate is not None:
+            bpy.data.images.remove(candidate)
+
+
 def relink_missing_textures(images, directory):
     """Search directory for missing texture files and relink them.
     directory must be an existing directory with absolute path (caller should pass bpy.path.abspath'd path).
@@ -127,16 +146,22 @@ def relink_missing_textures(images, directory):
         elif len(matches) == 1:
             new_path = matches[0]
             old_path = image.filepath
-            # One image failing must not abort the batch or leave it half-changed.
+            changed = False
             try:
+                # Reject unreadable/corrupt candidates before touching the original.
+                _validate_candidate_image(new_path)
+                changed = True
                 image.filepath = new_path
                 image.reload()
+                _require_decoded_image(image, new_path)
             except Exception as exc:
-                try:
-                    image.filepath = old_path
-                except Exception:
-                    pass
-                failed.append((image, str(exc)))
+                error = str(exc)
+                if changed:
+                    try:
+                        image.filepath = old_path
+                    except Exception as rollback_exc:
+                        error += f" (元のパスへの復元にも失敗: {rollback_exc})"
+                failed.append((image, error))
                 continue
             relinked.append((image, new_path))
         else:
