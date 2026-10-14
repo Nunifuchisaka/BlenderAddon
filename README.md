@@ -1,6 +1,6 @@
-# NuniAvatarToolkit
+# Nuni Avatar Toolkit for Blender
 
-VRChat / VRM アバター制作向けの、メッシュ最適化オールインワンBlenderアドオンです。
+VRChat / VRM アバター制作向けの、メッシュ最適化オールインワンBlenderアドオンです。Unity版(Nuni Avatar Toolkit for Unity)もあります。
 
 - **隠れメッシュ削除** — 服に完全に覆われて外部から見えないボディメッシュの面を自動検出・削除
 - **服メッシュフィット** — 頂点グループで指定した範囲のうち、体に埋まっている頂点だけを体表面へ押し出してシェイプキー化
@@ -20,7 +20,7 @@ Blender 4.2 以降。Linux版 Blender 4.2.0・4.3.2・5.2.0と、Windows版 Blen
 
 1. 配布ZIP(`NuniAvatarToolkit-1.0.0.zip`)を展開せずに用意します。
 2. Blenderの `編集 > プリファレンス > アドオン` を開き、右上の`∨`メニューから`ディスクからインストール`を選んで配布ZIPを指定します。
-3. 一覧に表示された「NuniAvatarToolkit」にチェックを入れて有効化します。
+3. 一覧に表示された「Nuni Avatar Toolkit for Blender」にチェックを入れて有効化します。
 4. 3Dビューポートのサイドバー(`N`キー)に「Avatar Toolkit」タブが追加されます。
 
 更新時はアドオンを無効化してから、新しいZIPを同じ手順でインストールし、有効化してください。更新時は機能モジュールも読み直します。

@@ -1,5 +1,5 @@
 bl_info = {
-    "name": "NuniAvatarToolkit",
+    "name": "Nuni Avatar Toolkit for Blender",
     "author": "Nunifuchisaka",
     "version": (1, 0, 0),
     "blender": (4, 2, 0),
