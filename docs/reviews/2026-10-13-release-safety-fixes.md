@@ -1,6 +1,6 @@
-# 1.0.1 リリース前レビューへの対応
+# リリース前レビューへの対応
 
-2026年10月13日。対象は NuniAvatarToolkit **1.0.1**。修正前の基準は `main` の [56c34dc62d38afc67cfe2fe90871f709476582f9](https://github.com/Nunifuchisaka/BlenderAddon/commit/56c34dc62d38afc67cfe2fe90871f709476582f9)（1.0.0）です。
+2026年10月13日。対象は初回公開版 NuniAvatarToolkit **1.0.0**。修正前の基準は `main` の [56c34dc62d38afc67cfe2fe90871f709476582f9](https://github.com/Nunifuchisaka/BlenderAddon/commit/56c34dc62d38afc67cfe2fe90871f709476582f9)（未公開の1.0.0候補）です。
 
 元の指摘 **R01〜R23（P1 7件、P2 16件）** に対し、編集データの同期、変更前の入力検証、使用中データの保護、幾何判定・診断・更新処理を修正しました。安全に処理できない構成は説明付きで変更前に中止します。共有・リンクデータの自動ローカル化、absoluteキーの時間評価、任意の服モディファイアの逆変換を追加したという意味ではありません。
 
@@ -8,7 +8,7 @@
 
 重要度は修正前レビューの分類を引き継いでいます。テスト欄は、変更後の安全な期待値を確認する回帰スクリプトへのリンクです。
 
-| ID / 元の重要度 | 1.0.1の動作 | 主な実装 | 回帰確認 |
+| ID / 元の重要度 | 修正後の動作 | 主な実装 | 回帰確認 |
 | --- | --- | --- | --- |
 | R01 / P1 | cleanupのスキャン・削除候補を編集データの同期後に計算し、編集中の有効なキーを保持する。 | [cleanup操作][s-cleanup-op] | [編集したキーの保持][t-cleanup] |
 | R02 / P1 | 隠れ面の選択・削除、cleanup、ボーンウェイト、服フィットで共有Meshへの変更を拒否する。解析用の読み取りは維持する。 | [共通事前検証][s-context]、[隠れ面API][s-hidden]、[ウェイト][s-bone]、[服フィット][s-cloth-op] | [隠れ面][t-hidden]、[cleanup][t-cleanup]、[ウェイト][t-bone]、[服][t-cloth] |
@@ -46,11 +46,13 @@
 
 [配布スクリプト](../../tools/build-release.ps1)は相対パスを`/`へ正規化してから、休止中の`features/texture_bake/`、`__pycache__/`、`*.pyc`を除外します。ルートの[LICENSE](../../LICENSE)をZIPの`NuniAvatarToolkit/LICENSE`へ同梱し、版数は[bl_info][s-init]から読み取ります。`-OutputDirectory`で出力先を指定でき、省略時は従来通りリポジトリ直下です。
 
-LinuxのPowerShell 7.4.7で実際のZIPを生成し、通常以外のキャッシュファイルも除外されること、LICENSEの内容、ZIP内の区切りを確認しました。元の1.0.0 ZIPから修正版1.0.1 ZIPへの同一セッション更新も確認しました。[ライフサイクルテスト][t-lifecycle]では、一時的なZIP・ユーザー設定を使い、3回の有効化／無効化、子ヘルパー・機能コード・登録クラスの更新、直接reload時の登録解除を検証します。
+LinuxのPowerShell 7.4.7で実際のZIPを生成し、通常以外のキャッシュファイルも除外されること、LICENSEの内容、ZIP内の区切りを確認しました。修正前のZIPから修正後のZIPへの同一セッション更新も確認しました。[ライフサイクルテスト][t-lifecycle]では、一時的なZIP・ユーザー設定を使い、3回の有効化／無効化、子ヘルパー・機能コード・登録クラスの更新、直接reload時の登録解除を検証します。
 
 ## 検証結果
 
 Linux上の **Blender 4.2.0、4.3.2、5.2.0 LTS** で、既存4本と追加7本、計**11本×3版＝33組すべて成功**。Blender外のunittestは**28件成功**しました。Wireframe保護の追加後はcleanup回帰を3版で再実行し、各版14ケースが成功しています。この3回は33組とは別の追加実行です。
+
+加えて、版数を1.0.0に統合した後の状態で、Windows 11上の **Windows版 Blender 5.2.0 LTS** でも全11スクリプトとunittest 28件の成功を確認しました（2026年10月14日）。
 
 | スクリプト | 主な確認範囲 |
 | --- | --- |
@@ -77,7 +79,7 @@ for test in tests/blender*.py; do
 done
 ```
 
-4.2.0・5.2.0はBlender公式配布のLinuxバイナリ、4.3.2は作業環境に導入済みのLinux版を使用しました。**Windows/macOS実機、対話GUIの描画・Undo、Unity/VRChatへの実インポートは未検証**です。標準FBX/OBJの確認はBlender内で行い、ゲームエンジン側の動作まで確認した結果ではありません。ここに記載した条件の回帰確認であり、任意のアバター・制約・モディファイアへの対応を保証するものではありません。
+4.2.0・5.2.0はBlender公式配布のLinuxバイナリ、4.3.2は作業環境に導入済みのLinux版を使用しました。**macOS実機、Windows版の4.2〜4.3系、対話GUIの描画・Undo、Unity/VRChatへの実インポートは未検証**です。標準FBX/OBJの確認はBlender内で行い、ゲームエンジン側の動作まで確認した結果ではありません。ここに記載した条件の回帰確認であり、任意のアバター・制約・モディファイアへの対応を保証するものではありません。
 
 [s-init]: ../../NuniAvatarToolkit/__init__.py
 [s-context]: ../../NuniAvatarToolkit/core/context_utils.py
