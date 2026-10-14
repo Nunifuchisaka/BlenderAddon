@@ -1,6 +1,6 @@
 # Nuni Avatar Toolkit for Blender
 
-VRChat / VRM アバター制作向けの、メッシュ最適化オールインワンBlenderアドオンです。Unity版(Nuni Avatar Toolkit for Unity)もあります。
+VRChat / VRM アバター制作向けの、メッシュ最適化オールインワンBlenderアドオンです。
 
 - **隠れメッシュ削除** — 服に完全に覆われて外部から見えないボディメッシュの面を自動検出・削除
 - **服メッシュフィット** — 頂点グループで指定した範囲のうち、体に埋まっている頂点だけを体表面へ押し出してシェイプキー化
