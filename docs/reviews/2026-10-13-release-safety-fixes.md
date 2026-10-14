@@ -46,7 +46,7 @@
 
 [配布スクリプト](../../tools/build-release.ps1)は相対パスを`/`へ正規化してから、休止中の`features/texture_bake/`、`__pycache__/`、`*.pyc`を除外します。ルートの[LICENSE](../../LICENSE)をZIPの`NuniAvatarToolkit/LICENSE`へ同梱し、版数は[bl_info][s-init]から読み取ります。`-OutputDirectory`で出力先を指定でき、省略時は従来通りリポジトリ直下です。
 
-LinuxのPowerShell 7.4.7で実際のZIPを生成し、通常以外のキャッシュファイルも除外されること、LICENSEの内容、ZIP内の区切りを確認しました。修正前のZIPから修正後のZIPへの同一セッション更新も確認しました。[ライフサイクルテスト][t-lifecycle]では、一時的なZIP・ユーザー設定を使い、3回の有効化／無効化、子ヘルパー・機能コード・登録クラスの更新、直接reload時の登録解除を検証します。
+LinuxのPowerShell 7.4.7で実際のZIPを生成し、通常以外のキャッシュファイルも除外されること、LICENSEの内容、ZIP内の区切りを確認しました。修正前のZIPから修正後のZIPへの同一セッション更新も確認しました。Windows PowerShell（Windows 11）でも配布ZIPを生成し、55ファイル・トップが`NuniAvatarToolkit/`・区切りが`/`・LICENSE同梱で、`texture_bake`・`__pycache__`・`*.pyc`を含まないことを確認しました。[ライフサイクルテスト][t-lifecycle]では、一時的なZIP・ユーザー設定を使い、3回の有効化／無効化、子ヘルパー・機能コード・登録クラスの更新、直接reload時の登録解除を検証します。
 
 ## 検証結果
 
