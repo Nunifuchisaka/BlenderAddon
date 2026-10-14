@@ -1,4 +1,4 @@
-# Nuni Avatar Toolkit for Blender
+# NuniAvatarToolkit
 
 VRChat / VRM アバター制作向けの、メッシュ最適化オールインワンBlenderアドオンです。
 
@@ -20,7 +20,7 @@ Blender 4.2 以降。Linux版 Blender 4.2.0・4.3.2・5.2.0と、Windows版 Blen
 
 1. 配布ZIP(`NuniAvatarToolkit-1.0.0.zip`)を展開せずに用意します。
 2. Blenderの `編集 > プリファレンス > アドオン` を開き、右上の`∨`メニューから`ディスクからインストール`を選んで配布ZIPを指定します。
-3. 一覧に表示された「Nuni Avatar Toolkit for Blender」にチェックを入れて有効化します。
+3. 一覧に表示された「NuniAvatarToolkit」にチェックを入れて有効化します。
 4. 3Dビューポートのサイドバー(`N`キー)に「Avatar Toolkit」タブが追加されます。
 
 更新時はアドオンを無効化してから、新しいZIPを同じ手順でインストールし、有効化してください。更新時は機能モジュールも読み直します。

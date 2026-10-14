@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 概要
 
-「Nuni Avatar Toolkit for Blender」（パッケージ名・モジュール名は `NuniAvatarToolkit`）は VRChat/VRM アバター向けメッシュ最適化のBlenderアドオン（純Python、`bpy`依存）。レガシー形式（`bl_info`）で配布する。ユーザー向けの機能説明・使い方は `README.md`、変更履歴は `CHANGELOG.md` を参照（ここでは繰り返さない）。
+`NuniAvatarToolkit` は VRChat/VRM アバター向けメッシュ最適化のBlenderアドオン（純Python、`bpy`依存）。レガシー形式（`bl_info`）で配布する。ユーザー向けの機能説明・使い方は `README.md`、変更履歴は `CHANGELOG.md` を参照（ここでは繰り返さない）。
 
 ## ビルド・配布・テスト
 
