@@ -6,7 +6,7 @@ bl_info = {
     "location": "3Dビューポート > サイドバー(Nキー) > Avatar Toolkit",
     "description": "VRChat/VRMアバター向けの制作支援ツール集(隠れメッシュ削除・服フィット・貫通チェック・統合・診断など)",
     "category": "Mesh",
-    "doc_url": "",
+    "doc_url": "https://nunifuchisaka.github.io/nuniavatartoolkit/",
     "tracker_url": "",
 }
 
